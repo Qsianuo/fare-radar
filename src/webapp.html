@@ -3,290 +3,995 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
 <title>低价票雷达 FareRadar</title>
 <style>
-:root{--blue:#2563eb;--blue-soft:#eff6ff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--bg:#f5f7fa;--deal:#b45309;--deal-soft:#fef3c7;--good:#15803d;--good-soft:#dcfce7;--bad:#b91c1c;--bad-soft:#fee2e2;--warn:#92400e;--warn-soft:#fef3c7}
+/* ================= 设计令牌（色板 / 间距 / 圆角 / 阴影层级） ================= */
+:root{
+  --bg:#eef1f6;
+  --surface:#ffffff;
+  --surface-2:#f6f8fc;
+  --ink:#17233d;
+  --ink-2:#3e4c68;
+  --muted:#7d89a3;
+  --line:#e3e8f0;
+  --line-2:#d3dbe8;
+  --brand:#2456e0;
+  --brand-strong:#1a41b4;
+  --brand-deep:#101f4d;
+  --brand-soft:#e9effc;
+  --brand-softer:#f4f7fe;
+  --gold:#a05a03;
+  --gold-soft:#fdf3e2;
+  --gold-line:#f0dcae;
+  --good:#15803d;          /* 绿色：全场唯一语义 = 低于底价 */
+  --good-soft:#e7f6ec;
+  --good-line:#bfe5cc;
+  --warn:#9a5b00;
+  --warn-soft:#fdf3e1;
+  --warn-line:#f0dcae;
+  --bad:#b3261e;
+  --bad-soft:#fdeceb;
+  --bad-line:#f3c6c3;
+  --r-s:8px; --r-m:12px; --r-l:18px;
+  --sh-1:0 1px 2px rgba(23,35,61,.05);
+  --sh-2:0 2px 6px rgba(23,35,61,.06),0 10px 28px rgba(23,35,61,.08);
+  --sh-3:0 10px 24px rgba(16,31,77,.16),0 26px 60px rgba(16,31,77,.16);
+}
+/* ================= 基础 ================= */
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
-.wrap{max-width:960px;margin:0 auto;padding:0 16px}
-header{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:22px 0 0}
-header .brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-h1{margin:0;font-size:22px}.en{font-weight:400;opacity:.85;font-size:15px;margin-left:2px}
-.badge{font-size:12px;padding:3px 10px;border-radius:999px;background:#fbbf24;color:#7c2d12;font-weight:600}
-nav{display:flex;gap:4px;margin-top:16px}
-.tab{border:none;background:rgba(255,255,255,.14);color:#fff;padding:10px 18px;border-radius:9px 9px 0 0;cursor:pointer;font-size:14px}
-.tab.active{background:var(--bg);color:var(--ink);font-weight:600}
-main{padding:20px 16px 48px}
-.panel{display:none}.panel.active{display:block}
-.toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-.toolbar label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
-.toolbar input,.toolbar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;min-width:96px;background:#fff;color:var(--ink)}
-.toolbar input#date{min-width:150px}
-button.primary{background:var(--blue);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:14px;cursor:pointer}
-button.primary:hover{background:#1d4ed8}
-button.plain{background:#fff;color:var(--ink);border:1px solid var(--line);padding:9px 14px;border-radius:8px;font-size:14px;cursor:pointer}
-button.plain:hover{border-color:var(--blue);color:var(--blue)}
-.notice{padding:10px 14px;border-radius:9px;margin:8px 0;font-size:14px;line-height:1.5}
-.notice.good{background:var(--good-soft);color:var(--good)}
-.notice.bad{background:var(--bad-soft);color:var(--bad)}
-.notice.warn{background:var(--warn-soft);color:var(--warn)}
-.notice.muted{background:#eef2f7;color:var(--muted)}
-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-th,td{padding:11px 12px;text-align:left;font-size:14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{background:#f8fafc;font-size:13px;color:var(--muted);white-space:nowrap}
-tr:last-child td{border-bottom:none}
-tr.lowest td{background:var(--blue-soft)}
-.price{font-weight:700;color:var(--blue);white-space:nowrap}
-tr.lowest .price{font-size:16px}
-.mark{display:inline-block;background:var(--blue);color:#fff;font-size:12px;border-radius:5px;padding:1px 7px;margin-left:8px;white-space:nowrap}
-.pill{display:inline-block;background:var(--deal-soft);color:var(--deal);font-size:12px;border-radius:999px;padding:1px 8px;margin-left:8px;white-space:nowrap}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
-.card h3{margin:0;font-size:15px;line-height:1.4}
-.card .big{font-size:24px;font-weight:800;color:var(--deal);margin-top:8px}
-.card .big small{font-size:12px;font-weight:400;color:var(--muted)}
-.card dl{margin:12px 0 0}
-.card dt{float:left;clear:left;width:64px;color:var(--muted);font-size:13px;padding:3px 0}
-.card dd{margin:0 0 0 70px;font-size:13px;padding:3px 0;line-height:1.5}
-.line-item{background:#fff;border:1px solid var(--line);border-left:4px solid var(--line);border-radius:9px;padding:11px 14px;margin:8px 0;font-size:14px}
-.line-item .route{font-weight:600;margin-right:8px}
-.line-item.hit{border-left-color:#22c55e;background:#f0fdf4}
-.line-item.wait{border-left-color:#cbd5e1;color:var(--muted)}
-.line-item.none{border-left-color:#f59e0b;background:#fffbeb}
-.empty{color:var(--muted);background:#fff;border:1px dashed var(--line);padding:16px;border-radius:12px;text-align:center}
-footer{color:var(--muted);font-size:12px;padding:18px;text-align:center}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:linear-gradient(180deg,#e9edf5 0,var(--bg) 260px);color:var(--ink);
+  font:15px/1.6 system-ui,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif}
+h1,h2,h3{margin:0}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #7fa3f5;outline-offset:2px}
+::selection{background:var(--brand-soft)}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ================= 渐变主视觉头部 ================= */
+.hero{position:relative;overflow:hidden;color:#fff;padding:26px 0 76px;
+  background:linear-gradient(135deg,#101f4d 0%,#1a3f9e 48%,#2f6ae8 100%)}
+.hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(460px 220px at 88% -12%,rgba(126,172,255,.30),transparent 65%),
+  radial-gradient(320px 170px at 72% 130%,rgba(126,172,255,.16),transparent 60%)}
+.hero .wrap{position:relative}
+.brand-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;
+  background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
+.logo svg{width:25px;height:25px}
+h1{font-size:22px;font-weight:700;letter-spacing:.5px}
+h1 .en{font-weight:500;opacity:.72;font-size:15px;margin-left:8px;letter-spacing:.3px}
+.badge-demo{margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  font-size:12.5px;font-weight:600;color:#5b3a05;padding:6px 14px;border-radius:999px;
+  background:linear-gradient(135deg,#ffd76e,#f5b942);box-shadow:0 2px 10px rgba(6,14,40,.22)}
+.badge-demo svg{width:14px;height:14px;flex:0 0 auto}
+.hero-sub{margin:10px 0 0;font-size:13px;color:rgba(255,255,255,.72);letter-spacing:.6px}
+.tabs{display:flex;gap:8px;margin-top:22px}
+.tab{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;
+  color:rgba(255,255,255,.92);background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.25);padding:9px 18px;border-radius:999px;
+  transition:background .18s ease,color .18s ease,transform .18s ease,box-shadow .18s ease}
+.tab svg{width:16px;height:16px}
+.tab:hover{background:rgba(255,255,255,.2)}
+.tab.active{background:#fff;color:var(--brand);border-color:#fff;font-weight:600;
+  box-shadow:0 4px 14px rgba(9,20,50,.25)}
+.tab.active:active,.tab:active{transform:translateY(1px)}
+
+/* ================= 主区（上叠卡片）与页签过渡 ================= */
+main.wrap{position:relative;margin-top:-48px;padding-bottom:56px}
+.panel{display:none}
+.panel.active{display:block;animation:panelIn .3s cubic-bezier(.2,.7,.3,1)}
+@keyframes panelIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.panel-head{margin:2px 2px 10px}
+.panel-head h2{font-size:19px;font-weight:700}
+.panel-head p{margin:3px 0 0;font-size:13px;color:var(--muted)}
+
+/* ================= 通用卡片 / 表单 / 按钮 ================= */
+.card-flat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);box-shadow:var(--sh-1)}
+.toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);
+  box-shadow:var(--sh-1);padding:16px;margin:16px 0}
+.field{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.field>span{letter-spacing:.4px}
+select,input{background:#fff;border:1px solid var(--line-2);border-radius:var(--r-s);
+  padding:9px 12px;font-size:14px;color:var(--ink);transition:border-color .15s ease,box-shadow .15s ease}
+select:hover,input:hover{border-color:#b9c6de}
+select:focus,input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(36,86,224,.14)}
+select.city{min-width:132px}
+input[type=date]{min-width:158px}
+input[type=number]{width:140px}
+.route-fields{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.route-fields .field{flex:0 1 auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+  border:none;border-radius:var(--r-s);padding:10px 20px;font-size:14px;font-weight:600;
+  transition:transform .15s ease,box-shadow .15s ease,background .15s ease,border-color .15s ease,color .15s ease}
+.btn.primary{color:#fff;background:linear-gradient(135deg,#2c62ec,#1a41b4);
+  box-shadow:0 4px 12px rgba(26,65,180,.28)}
+.btn.primary:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(26,65,180,.36)}
+.btn.primary:active{transform:translateY(0)}
+.btn.ghost{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
+.btn.ghost:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-softer)}
+.btn.ghost:active{transform:translateY(1px)}
+.btn.small{padding:6px 12px;font-size:12.5px;border-radius:7px}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.btn:disabled{opacity:.55;cursor:default;transform:none}
+.btn.icon-btn{padding:9px 11px}
+.btn.icon-btn svg{width:18px;height:18px}
+.btn .ic{width:16px;height:16px}
+
+/* ================= 提示条 ================= */
+.notice{padding:10px 14px;border-radius:var(--r-s);margin:8px 0;font-size:13.5px;
+  line-height:1.55;border:1px solid transparent}
+.notice.muted{background:var(--surface-2);color:var(--ink-2);border-color:var(--line)}
+.notice.info{background:var(--brand-softer);color:var(--brand-strong);border-color:#d4e0f8}
+.notice.good{background:var(--good-soft);color:var(--good);border-color:var(--good-line);font-weight:600}
+.notice.warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn-line)}
+.notice.bad{background:var(--bad-soft);color:var(--bad);border-color:var(--bad-line);font-weight:600}
+.notice.demo{background:transparent;border:1px dashed var(--line-2);color:var(--muted);
+  font-size:12.5px;padding:7px 12px}
+
+/* ================= 首页价格仪表 ================= */
+.gauge-card{background:linear-gradient(180deg,#ffffff,#fbfcff);border:1px solid var(--line);
+  border-radius:var(--r-l);box-shadow:var(--sh-3);padding:22px 24px 18px;margin-bottom:4px}
+.gauge-top{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:24px;align-items:center}
+.gauge-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+  color:var(--muted);letter-spacing:1px}
+.gauge-price{margin:6px 0 2px;font-size:64px;line-height:1.05;font-weight:800;color:var(--ink);
+  letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.gauge-route{font-size:16px;font-weight:600;color:var(--ink-2)}
+.gauge-date{margin-top:2px;font-size:13px;color:var(--muted)}
+.gauge-side{display:flex;flex-direction:column;align-items:center}
+#gauge-arc svg{width:230px;height:auto;display:block}
+.arc-label{font-size:12px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.arc-mid{font-size:11px;fill:#a3adc2;letter-spacing:3px}
+.tag-demo{display:inline-block;font-size:11px;font-weight:600;color:#8a5a00;
+  background:var(--gold-soft);border:1px solid var(--gold-line);padding:1px 9px;border-radius:999px}
+.chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:16px 0 6px;padding-top:14px;border-top:1px dashed var(--line-2)}
+.chart-title{font-size:14px;font-weight:700;color:var(--ink-2)}
+.refresh{display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+  font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.refresh select{padding:5px 8px;font-size:12.5px;border-radius:7px}
+.updated{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.trend-box svg{width:100%;height:auto;display:block}
+.chart-label{font-size:11px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.chart-notice{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+.chart-empty{margin:0;padding:30px 0;text-align:center;font-size:13px;color:var(--muted)}
+.chart-error{color:var(--bad)}
+
+/* ================= 结果元信息与表格 ================= */
+.result-meta{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:14px 2px 10px}
+.meta-route{font-size:17px;font-weight:700}
+.meta-sub{font-size:13px;color:var(--muted)}
+.table-scroll{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);box-shadow:var(--sh-1)}
+table.offers{width:100%;border-collapse:collapse;min-width:860px}
+.offers th,.offers td{padding:12px 14px;text-align:left;font-size:13.5px;
+  border-bottom:1px solid var(--line);vertical-align:top}
+.offers thead th{position:sticky;top:0;z-index:2;background:var(--surface-2);color:var(--muted);
+  font-size:12.5px;font-weight:700;letter-spacing:.5px;white-space:nowrap;
+  box-shadow:inset 0 -1px 0 var(--line-2)}
+.offers thead th:first-child{border-top-left-radius:var(--r-m)}
+.offers thead th:last-child{border-top-right-radius:var(--r-m)}
+.offers tbody tr{transition:background .12s ease}
+.offers tbody tr:nth-child(even){background:#fafbfe}
+.offers tbody tr:hover{background:var(--brand-softer)}
+.offers tbody tr:last-child td{border-bottom:none}
+.offers tbody tr:last-child td:first-child{border-bottom-left-radius:var(--r-m)}
+.offers tbody tr:last-child td:last-child{border-bottom-right-radius:var(--r-m)}
+tr.row-lowest{background:var(--brand-soft)!important;box-shadow:inset 3px 0 0 var(--brand)}
+tr.row-lowest:hover{background:var(--brand-soft)!important}
+.cell-price{white-space:nowrap}
+.price{font-size:17px;font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+tr.row-lowest .price{font-size:19px;color:var(--brand-strong)}
+.mark-lowest{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+  background:var(--brand);color:#fff;font-size:11.5px;font-weight:700;vertical-align:2px}
+.source-name{font-weight:600}
+.chip{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;
+  margin-left:6px;vertical-align:1px;white-space:nowrap}
+.chip-deal{background:var(--gold-soft);color:var(--gold);border:1px solid var(--gold-line)}
+.chip-source{background:var(--brand-soft);color:var(--brand-strong);border:1px solid #d4e0f8;margin-left:0}
+.chip-id{background:var(--surface-2);color:var(--muted);border:1px solid var(--line);margin-left:0}
+.chip-stock{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);margin-left:10px}
+.chip-soldout{background:#f0f2f6;color:var(--muted);border:1px solid var(--line);margin-left:10px}
+.source-desc{margin-top:3px;max-width:220px;font-size:12px;color:var(--muted)}
+.cell-tax{color:var(--ink-2);white-space:nowrap}
+.cell-product{max-width:230px}
+.cell-note{color:var(--ink-2);max-width:270px}
+.flag{display:inline-block;margin:2px 6px 2px 0;padding:2px 9px;border-radius:999px;white-space:nowrap;
+  background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line);font-size:12px}
+.flag-sold{background:var(--bad-soft);color:var(--bad);border-color:var(--bad-line)}
+.flag-none{color:var(--muted)}
+
+/* ================= 团购卡片 ================= */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.deal-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);
+  box-shadow:var(--sh-1);padding:18px;transition:transform .16s ease,box-shadow .16s ease}
+.deal-card:hover{transform:translateY(-2px);box-shadow:var(--sh-2)}
+.deal-head{display:flex;gap:8px;flex-wrap:wrap}
+.deal-name{margin:10px 0 4px;font-size:15px;font-weight:700;line-height:1.5}
+.deal-price{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px;margin:6px 0 4px}
+.deal-price strong{font-size:28px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
+.deal-tax{font-size:12.5px;color:var(--muted)}
+.deal-card.soldout{opacity:.68;background:var(--surface-2)}
+.deal-facts{margin:10px 0 0;padding-top:10px;border-top:1px dashed var(--line)}
+.deal-facts dt{float:left;clear:left;width:64px;padding:3px 0;font-size:12.5px;color:var(--muted)}
+.deal-facts dd{margin:0 0 0 72px;padding:3px 0;font-size:12.5px;line-height:1.55;color:var(--ink-2)}
+
+/* ================= 收藏航线 ================= */
+.watch-meta{margin:14px 2px 0;font-size:12.5px;color:var(--muted)}
+.watch-grid{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+.watch-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 18px;
+  background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--line-2);
+  border-radius:var(--r-m);box-shadow:var(--sh-1);transition:box-shadow .16s ease}
+.watch-row:hover{box-shadow:var(--sh-2)}
+.watch-row.below{border-left-color:var(--good);
+  background:linear-gradient(90deg,var(--good-soft),#ffffff 32%)}
+.watch-route{flex:1 1 220px}
+.route-text{font-size:16px;font-weight:700}
+.route-sub{margin-top:3px;font-size:12.5px;color:var(--muted)}
+.watch-price{display:flex;flex-direction:column;min-width:120px}
+.wp-label{font-size:12px;color:var(--muted)}
+.wp-num{font-size:26px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.wp-num.wp-none{font-size:15px;font-weight:600;color:var(--muted)}
+.watch-row.below .wp-num{color:var(--good)}
+.badge-below{width:max-content;margin-top:4px;padding:2px 10px;border-radius:999px;
+  background:var(--good);color:#fff;font-size:12px;font-weight:700}
+.watch-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+
+/* ================= 空状态 / 错误态 ================= */
+.empty-state{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+  padding:38px 20px;margin:14px 0;background:var(--surface);border:1.5px dashed var(--line-2);
+  border-radius:var(--r-l);color:var(--muted)}
+.empty-state .ic{width:44px;height:44px;color:#b9c6de;margin-bottom:6px}
+.empty-title{margin:0;font-size:15px;font-weight:600;color:var(--ink-2)}
+.empty-sub{margin:0;max-width:420px;font-size:13px}
+.state-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin:8px 0;
+  padding:16px 18px;background:var(--surface);border:1px solid var(--line);
+  border-left:4px solid var(--bad);border-radius:var(--r-m);box-shadow:var(--sh-1)}
+.state-card .ic{width:20px;height:20px;color:var(--bad)}
+.state-title{margin:2px 0 0;font-size:14px;font-weight:700}
+.state-msg{margin:0;font-size:13px;color:var(--ink-2)}
+
+/* ================= 骨架屏 ================= */
+.skel{border-radius:6px;background:linear-gradient(90deg,#eceff5 25%,#f7f9fc 42%,#eceff5 60%);
+  background-size:400% 100%;animation:shimmer 1.3s infinite linear}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+.skel-line{height:14px;margin:15px 16px}
+.w60{width:60%}.w80{width:80%}
+.skel-arc{width:230px;height:120px;border-radius:12px}
+.skel-chart{height:170px;margin-top:6px;border-radius:10px}
+.skel-card{height:190px;border-radius:var(--r-m)}
+.skel-row{height:64px;margin:0;border-radius:var(--r-m)}
+
+/* ================= 页脚 ================= */
+footer{margin-top:20px;padding:22px 16px 30px;text-align:center;color:var(--muted);
+  font-size:12.5px;background:var(--surface);border-top:1px solid var(--line)}
+.foot-brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px;
+  font-size:14px;font-weight:700;color:var(--ink-2)}
+.foot-brand svg{width:16px;height:16px;color:var(--brand)}
+.foot-brand .ver{padding:1px 10px;border-radius:999px;background:var(--brand-soft);
+  color:var(--brand-strong);font-size:12px;font-weight:700}
+footer p{margin:4px 0 0}
+
+/* ================= 响应式：平板（≤1024）与手机（≤640） ================= */
+@media (max-width:1024px){
+  .gauge-top{grid-template-columns:1fr;justify-items:start}
+  .gauge-side{flex-direction:row;align-items:center;gap:20px}
+  .gauge-price{font-size:54px}
+  .table-scroll{overflow-x:auto}
+}
+@media (max-width:640px){
+  .wrap{padding:0 14px}
+  main.wrap{margin-top:-42px;padding-bottom:40px}
+  .hero{padding:20px 0 66px}
+  .badge-demo{margin-left:0}
+  .tabs{overflow-x:auto;padding-bottom:2px}
+  .tab{flex:0 0 auto;padding:8px 14px;font-size:13px}
+  .gauge-card{padding:18px 16px 14px}
+  .gauge-price{font-size:44px}
+  #gauge-arc svg{width:200px}
+  .toolbar{flex-direction:column;align-items:stretch}
+  .route-fields .field{flex:1 1 calc(50% - 10px)}
+  .route-fields .field select{width:100%;min-width:0}
+  .route-fields .field input{width:100%}
+  .toolbar .btn.primary{width:100%}
+  input[type=date]{min-width:0}
+  input[type=number]{width:100%}
+  .refresh{margin-left:0}
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="wrap brand">
-    <h1>✈️ 低价票雷达<span class="en">FareRadar</span></h1>
-    <span class="badge">模拟数据 · 不能用于实际购票</span>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="brand-row">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6" opacity=".6"/>
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+          <path d="M12 12l6.3-6.3"/>
+        </svg>
+      </span>
+      <h1>低价票雷达<span class="en">FareRadar</span></h1>
+      <span class="badge-demo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8h.01M12 11.5V16"/>
+        </svg>
+        演示数据 · 非真实报价，不能用于实际购票
+      </span>
+    </div>
+    <p class="hero-sub">多票源比价 · 收藏航线 · 当前最低价一目了然</p>
+    <nav class="tabs" aria-label="功能页签">
+      <button class="tab active" data-tab="search" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+        </svg>搜索比价</button>
+      <button class="tab" data-tab="deals" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9V7.5A1.5 1.5 0 0 1 4.5 6h15A1.5 1.5 0 0 1 21 7.5V9a3 3 0 0 0 0 6v1.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5V15a3 3 0 0 0 0-6z"/>
+          <path d="M14 7.5v9" stroke-dasharray="2 2.4" opacity=".7"/>
+        </svg>团购专区</button>
+      <button class="tab" data-tab="watch" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+          <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4.2L6 20V5a1 1 0 0 1 1-1z"/>
+        </svg>收藏航线</button>
+    </nav>
   </div>
-  <nav class="wrap">
-    <button class="tab active" data-tab="search">🔍 搜索比价</button>
-    <button class="tab" data-tab="deals">🎫 团购专区</button>
-    <button class="tab" data-tab="watch">🔔 低价提醒</button>
-  </nav>
 </header>
+
 <main class="wrap">
-  <section id="tab-search" class="panel active">
+
+  <!-- ============ 页签一：搜索比价（顶部为价格仪表） ============ -->
+  <section id="tab-search" class="panel active" aria-label="搜索比价">
+    <div class="gauge-card" aria-live="polite">
+      <div class="gauge-top">
+        <div class="gauge-main">
+          <div class="gauge-label">当前最低价<span class="tag-demo">演示波动</span></div>
+          <div class="gauge-price" id="gauge-price">—</div>
+          <div class="gauge-route" id="gauge-route"></div>
+          <div class="gauge-date" id="gauge-date"></div>
+        </div>
+        <div class="gauge-side" id="gauge-arc"></div>
+      </div>
+      <div class="chart-head">
+        <span class="chart-title">近 24 小时价格走势</span>
+        <span class="tag-demo">演示波动</span>
+        <label class="refresh">自动刷新
+          <select id="refresh-rate">
+            <option value="30">每 30 秒</option>
+            <option value="60" selected>每 60 秒</option>
+            <option value="0">关闭</option>
+          </select>
+        </label>
+        <span class="updated" id="gauge-updated"></span>
+      </div>
+      <div class="trend-box" id="trend-chart"></div>
+      <p class="chart-notice" id="trend-notice"></p>
+    </div>
+
     <form id="search-form" class="toolbar">
-      <label>出发<input id="from" list="cities" value="SHA" maxlength="3" placeholder="如 SHA"></label>
-      <label>到达<input id="to" list="cities" value="CTU" maxlength="3" placeholder="如 CTU"></label>
-      <label>出发日期<input id="date" type="date"></label>
-      <label>票源
-        <select id="source">
-          <option value="">全部票源</option>
-          <option value="simulated_airline">模拟航司源</option>
-          <option value="douyin_groupbuy">抖音团购源（模拟）</option>
-        </select>
-      </label>
-      <button type="submit" class="primary">搜索</button>
+      <div class="route-fields">
+        <label class="field"><span>出发</span><select id="from" class="city"></select></label>
+        <button type="button" id="swap-btn" class="btn ghost icon-btn" aria-label="交换出发与到达" title="交换出发与到达">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4L3.5 7.5 7 11"/><path d="M3.5 7.5H16"/>
+            <path d="M17 13l3.5 3.5L17 20"/><path d="M20.5 16.5H8"/>
+          </svg>
+        </button>
+        <label class="field"><span>到达</span><select id="to" class="city"></select></label>
+      </div>
+      <label class="field"><span>出发日期</span><input id="date" type="date"></label>
+      <label class="field"><span>票源</span><select id="source"></select></label>
+      <button type="submit" class="btn primary">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+        </svg>搜索比价</button>
     </form>
-    <div id="search-status"></div>
+    <div id="search-status" aria-live="polite"></div>
     <div id="search-result"></div>
   </section>
 
-  <section id="tab-deals" class="panel">
+  <!-- ============ 页签二：团购专区 ============ -->
+  <section id="tab-deals" class="panel" aria-label="团购专区">
+    <div class="panel-head">
+      <h2>团购专区</h2>
+      <p>精选套餐与直播间闪购，库存与有效期以卡片信息为准。</p>
+    </div>
     <form id="deals-form" class="toolbar">
-      <label>出发（可留空）<input id="deal-from" list="cities" maxlength="3" placeholder="全部"></label>
-      <label>到达（可留空）<input id="deal-to" list="cities" maxlength="3" placeholder="全部"></label>
-      <button type="submit" class="primary">查看团购</button>
+      <label class="field"><span>出发（可留空）</span><select id="deal-from" class="city"></select></label>
+      <label class="field"><span>到达（可留空）</span><select id="deal-to" class="city"></select></label>
+      <button type="submit" class="btn primary">查看团购</button>
     </form>
-    <div id="deals-status"></div>
+    <div id="deals-status" aria-live="polite"></div>
     <div id="deals-result" class="cards"></div>
   </section>
 
-  <section id="tab-watch" class="panel">
+  <!-- ============ 页签三：收藏航线 ============ -->
+  <section id="tab-watch" class="panel" aria-label="收藏航线">
+    <div class="panel-head">
+      <h2>收藏航线</h2>
+      <p>把常查的航线存下来，一眼看到当前最低价；低于底价的航线会标绿。</p>
+    </div>
     <form id="watch-form" class="toolbar">
-      <label>出发<input id="watch-from" list="cities" value="SHA" maxlength="3"></label>
-      <label>到达<input id="watch-to" list="cities" value="PEK" maxlength="3"></label>
-      <label>心理底价（元）<input id="watch-price" type="number" min="1" value="800"></label>
-      <button type="submit" class="primary">设底价</button>
-      <button type="button" id="watch-check" class="plain">立即检查</button>
+      <label class="field"><span>出发</span><select id="watch-from" class="city"></select></label>
+      <label class="field"><span>到达</span><select id="watch-to" class="city"></select></label>
+      <label class="field"><span>底价（选填）</span><input id="watch-price" type="number" min="1" step="1" placeholder="如 800"></label>
+      <button type="submit" id="watch-submit" class="btn primary">添加收藏</button>
     </form>
-    <div id="watch-status"></div>
+    <div id="watch-status" aria-live="polite"></div>
     <div id="watch-list"></div>
-    <div id="watch-result"></div>
   </section>
-</main>
-<footer>FareRadar v1.2.1（教学项目）· 数据来自内置模拟票源，购买始终发生在航司官网或抖音 App 内 · 与命令行版共用同一套比价规则</footer>
 
-<datalist id="cities">
-  <option value="SHA">上海</option>
-  <option value="PEK">北京</option>
-  <option value="CTU">成都</option>
-  <option value="KIX">大阪关西</option>
-  <option value="CAN">广州</option>
-</datalist>
+</main>
+
+<footer>
+  <div class="foot-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+      <path d="M12 12l6.3-6.3"/>
+    </svg>
+    <span>低价票雷达 FareRadar</span><span class="ver">v1.3.0</span>
+  </div>
+  <p>教学演示项目 · 页面与命令行版共用同一套比价规则 · 购买始终发生在航司官网或抖音 App 内</p>
+</footer>
 
 <script>
 "use strict";
+
+/* ---------------- 基础工具 ---------------- */
 const $ = (id) => document.getElementById(id);
+const SVG_NS = "http://www.w3.org/2000/svg";
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
 };
+const sv = (tag, attrs) => {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+const ICONS = {
+  plane: [
+    ["path", { d: "M21.5 2.5l-8.6 17.6-2.8-7.2-7.6-2.8z" }],
+    ["path", { d: "M21.5 2.5L10.1 12.9" }]
+  ],
+  info: [
+    ["circle", { cx: "12", cy: "12", r: "9" }],
+    ["path", { d: "M12 8h.01" }],
+    ["path", { d: "M12 11.5V16" }]
+  ]
+};
+function icon(name) {
+  const s = sv("svg", { viewBox: "0 0 24 24", "class": "ic", "aria-hidden": "true" });
+  (ICONS[name] || []).forEach(([t, a]) => {
+    const attrs = { fill: "none", stroke: "currentColor", "stroke-width": "1.7",
+      "stroke-linecap": "round", "stroke-linejoin": "round" };
+    for (const k in a) attrs[k] = a[k];
+    s.append(sv(t, attrs));
+  });
+  return s;
+}
 async function api(path, params = {}, method = "GET") {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== "" && v != null));
-  const res = await fetch(path + (qs.toString() ? "?" + qs : ""), { method });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || "请求失败");
+  let data;
+  try {
+    const res = await fetch(path + (qs.toString() ? "?" + qs : ""), { method: method });
+    data = await res.json();
+  } catch (e) {
+    throw new Error("网络请求失败，请确认服务已启动后重试");
+  }
+  if (!data.ok) throw new Error(data.error || "请求失败，请稍后重试");
   return data;
 }
 function notice(node, kind, text) {
   if (!text) return;
   node.append(el("div", "notice " + kind, text));
 }
-function localDate(offsetDays = 7) {
-  const d = new Date(Date.now() + offsetDays * 86400000);
+function localDate(offsetDays) {
+  const d = new Date(Date.now() + (offsetDays || 0) * 86400000);
   const p = (x) => String(x).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
-
-/* ---- 页签 ---- */
-document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => {
-  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
-  document.querySelectorAll(".panel").forEach(p =>
-    p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
-  if (btn.dataset.tab === "deals") $("deals-form").requestSubmit();
-  if (btn.dataset.tab === "watch") { loadWatchList(); }
-}));
-
-/* ---- 搜索比价 ---- */
-function renderSearch(data) {
-  const out = $("search-result");
-  out.innerHTML = "";
-  if (!data.offers.length) { out.append(el("p", "empty", data.empty_hint)); return; }
-  const t = el("table");
-  const head = el("tr");
-  ["价格", "票源", "航班 / 套餐", "口径", "备注"].forEach(h => head.append(el("th", null, h)));
-  t.append(head);
-  data.offers.forEach(o => {
-    const tr = el("tr", o.is_lowest ? "lowest" : "");
-    const price = el("td", "price", "¥" + o.price);
-    if (o.is_lowest) price.append(el("span", "mark", "◀ 最低价"));
-    const src = el("td", null, o.source_name);
-    if (o.is_deal) src.append(el("span", "pill", "团购"));
-    tr.append(price, src, el("td", null, o.product), el("td", null, o.tax_label),
-      el("td", null, o.note));
-    t.append(tr);
-  });
-  out.append(t);
+function nowTime() {
+  const d = new Date();
+  const p = (x) => String(x).padStart(2, "0");
+  return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
 }
-$("search-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const box = $("search-status"), out = $("search-result");
-  box.innerHTML = ""; out.innerHTML = "";
-  box.append(el("div", "notice muted", "查询中…"));
-  try {
-    const data = await api("/api/search", {
-      from: $("from").value, to: $("to").value,
-      date: $("date").value, source: $("source").value });
-    box.innerHTML = "";
-    notice(box, "muted", `查询 ${data.route} · ${data.date}（${data.weekday}）`);
-    if (data.alert_hit) notice(box, "good", "🔔 [低价提醒] " + data.alert_hit);
-    if (data.warning) notice(box, "bad", data.warning);
-    data.failed.forEach(n => notice(box, "warn", `票源「${n}」暂不可用，已跳过（不影响其他票源）。`));
-    renderSearch(data);
-  } catch (err) { box.innerHTML = ""; notice(box, "bad", err.message); }
+
+/* ---------------- 全局状态 ---------------- */
+const state = {
+  cities: [],
+  cityMap: new Map(),
+  gaugeParams: null,     // 仪表当前展示的航线/日期（跟随最近一次搜索）
+  lastSearch: null,
+  trendTimer: null,
+  trendInterval: 60,     // 秒；0 = 关闭
+  dealsLoaded: false,
+  watchLoaded: false
+};
+const cityName = (code) => state.cityMap.get(code) || code;
+
+/* ---------------- 页签切换 ---------------- */
+function activateTab(name) {
+  document.querySelectorAll(".tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".panel").forEach((p) =>
+    p.classList.toggle("active", p.id === "tab-" + name));
+  if (name === "deals" && !state.dealsLoaded) { state.dealsLoaded = true; loadDeals(); }
+  if (name === "watch" && !state.watchLoaded) { state.watchLoaded = true; loadWatchList(); }
+}
+document.querySelectorAll(".tab").forEach((btn) =>
+  btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
+
+/* ---------------- 城市与票源下拉 ---------------- */
+function fillCitySelect(sel, def, allowAll) {
+  sel.innerHTML = "";
+  if (allowAll) sel.append(new Option("全部城市", ""));
+  state.cities.forEach((c) => sel.append(new Option(c.name, c.code)));
+  sel.value = def || "";
+}
+function fillSourceSelect(sources) {
+  const sel = $("source");
+  sel.innerHTML = "";
+  sel.append(new Option("全部票源", ""));
+  (sources || []).forEach((s) => {
+    const o = new Option(s.name, s.id);
+    if (s.description) o.title = s.description;
+    sel.append(o);
+  });
+}
+$("swap-btn").addEventListener("click", () => {
+  const f = $("from"), t = $("to");
+  const tmp = f.value;
+  f.value = t.value;
+  t.value = tmp;
 });
 
-/* ---- 团购专区 ---- */
-function renderDeals(data) {
-  const out = $("deals-result");
-  out.innerHTML = "";
-  if (!data.deals.length) { out.append(el("p", "empty", "当前航线暂无团购套餐，可清空过滤查看全部。")); return; }
-  data.deals.forEach(d => {
-    const c = el("div", "card");
-    const h = el("h3", null, d.name + " ");
-    h.append(el("span", "pill", d.deal_id));
-    const big = el("div", "big", "¥" + d.price);
-    big.append(el("small", null, ` / ${d.tax_label}｜库存 ${d.stock}`));
-    const dl = el("dl");
-    [["航线", d.route_text], ["有效期", d.validity], ["退改规则", d.refund],
-     ["下单方式", d.purchase], ["限制条件", d.note], ["更新时间", d.updated]]
-      .forEach(([k, v]) => { dl.append(el("dt", null, k), el("dd", null, v)); });
-    c.append(h, big, dl);
-    out.append(c);
-  });
+/* ---------------- 首页价格仪表 ---------------- */
+function renderGaugeSkeleton() {
+  $("gauge-price").textContent = "—";
+  $("gauge-route").textContent = "";
+  $("gauge-date").textContent = "";
+  const arc = $("gauge-arc");
+  arc.innerHTML = "";
+  arc.append(el("div", "skel skel-arc"));
+  const chart = $("trend-chart");
+  chart.innerHTML = "";
+  chart.append(el("div", "skel skel-chart"));
 }
-$("deals-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
+function polar(cx, cy, r, deg) {
+  const rad = deg * Math.PI / 180;
+  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+}
+function arcPath(cx, cy, r, a0, a1) {
+  const p0 = polar(cx, cy, r, a0);
+  const p1 = polar(cx, cy, r, a1);
+  const large = (a1 - a0) > 180 ? 1 : 0;
+  return "M " + p0[0].toFixed(2) + " " + p0[1].toFixed(2) +
+    " A " + r + " " + r + " 0 " + large + " 1 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2);
+}
+function renderGaugeArc(low, high, cur) {
+  const box = $("gauge-arc");
+  box.innerHTML = "";
+  const svg = sv("svg", { viewBox: "0 0 240 142", role: "img", "aria-label": "今日价格区间仪表" });
+  const defs = sv("defs", {});
+  const grad = sv("linearGradient", { id: "arcGrad", x1: "0", y1: "0", x2: "1", y2: "0" });
+  grad.append(sv("stop", { offset: "0%", "stop-color": "#8fb4ff" }));
+  grad.append(sv("stop", { offset: "100%", "stop-color": "#2456e0" }));
+  defs.append(grad);
+  svg.append(defs);
+  const cx = 120, cy = 118, r = 92;
+  svg.append(sv("path", { d: arcPath(cx, cy, r, 180, 360), fill: "none",
+    stroke: "#e3e8f0", "stroke-width": "12", "stroke-linecap": "round" }));
+  let frac = 0.5;
+  if (high > low) frac = Math.min(1, Math.max(0, (cur - low) / (high - low)));
+  const end = 180 + frac * 180;
+  svg.append(sv("path", { d: arcPath(cx, cy, r, 180, end), fill: "none",
+    stroke: "url(#arcGrad)", "stroke-width": "12", "stroke-linecap": "round" }));
+  const pt = polar(cx, cy, r, end);
+  svg.append(sv("circle", { cx: pt[0].toFixed(2), cy: pt[1].toFixed(2), r: "7",
+    fill: "#2456e0", stroke: "#ffffff", "stroke-width": "3" }));
+  const lab = (x, y, txt, cls) => {
+    const t = sv("text", { x: x, y: y, "text-anchor": "middle", "class": cls });
+    t.textContent = txt;
+    return t;
+  };
+  svg.append(lab(cx - r, cy + 18, "¥" + low, "arc-label"));
+  svg.append(lab(cx + r, cy + 18, "¥" + high, "arc-label"));
+  svg.append(lab(cx, cy - 30, "今日区间", "arc-mid"));
+  box.append(svg);
+}
+function renderTrendChart(points) {
+  const box = $("trend-chart");
+  box.innerHTML = "";
+  if (!points || points.length < 2) {
+    box.append(el("p", "chart-empty", "暂无足够数据绘制走势"));
+    return;
+  }
+  const W = 640, H = 180, PL = 52, PR = 18, PT = 16, PB = 30;
+  const prices = points.map((p) => p.price);
+  const dMin = Math.min.apply(null, prices);
+  const dMax = Math.max.apply(null, prices);
+  let lo = dMin, hi = dMax;
+  const pad = ((hi - lo) || Math.max(1, hi * 0.02)) * 0.18;
+  lo -= pad; hi += pad;
+  const X = (i) => PL + (W - PL - PR) * i / (points.length - 1);
+  const Y = (p) => PT + (H - PT - PB) * (1 - (p - lo) / (hi - lo));
+  const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "近 24 小时演示价格走势" });
+  const defs = sv("defs", {});
+  const grad = sv("linearGradient", { id: "areaGrad", x1: "0", y1: "0", x2: "0", y2: "1" });
+  grad.append(sv("stop", { offset: "0%", "stop-color": "rgba(36,86,224,.22)" }));
+  grad.append(sv("stop", { offset: "100%", "stop-color": "rgba(36,86,224,0)" }));
+  defs.append(grad);
+  svg.append(defs);
+  [0.25, 0.5, 0.75].forEach((f) => {
+    const y = PT + (H - PT - PB) * f;
+    svg.append(sv("line", { x1: PL, y1: y, x2: W - PR, y2: y, stroke: "#edf1f7", "stroke-width": "1" }));
+  });
+  let linePath = "";
+  points.forEach((p, i) => {
+    linePath += (i ? " L " : "M ") + X(i).toFixed(1) + " " + Y(p.price).toFixed(1);
+  });
+  const areaPath = linePath + " L " + X(points.length - 1).toFixed(1) + " " + (H - PB) +
+    " L " + X(0).toFixed(1) + " " + (H - PB) + " Z";
+  svg.append(sv("path", { d: areaPath, fill: "url(#areaGrad)" }));
+  svg.append(sv("path", { d: linePath, fill: "none", stroke: "#2456e0", "stroke-width": "2.5",
+    "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  const lx = X(points.length - 1), ly = Y(prices[prices.length - 1]);
+  svg.append(sv("circle", { cx: lx.toFixed(1), cy: ly.toFixed(1), r: "4.5",
+    fill: "#2456e0", stroke: "#ffffff", "stroke-width": "2" }));
+  const yl = sv("text", { x: PL - 8, y: Y(dMin) + 4, "text-anchor": "end", "class": "chart-label" });
+  yl.textContent = "¥" + dMin;
+  const yh = sv("text", { x: PL - 8, y: Y(dMax) + 4, "text-anchor": "end", "class": "chart-label" });
+  yh.textContent = "¥" + dMax;
+  const t0 = sv("text", { x: PL, y: H - 8, "class": "chart-label" });
+  t0.textContent = points[0].time;
+  const t1 = sv("text", { x: W - PR, y: H - 8, "text-anchor": "end", "class": "chart-label" });
+  t1.textContent = points[points.length - 1].time;
+  svg.append(yl, yh, t0, t1);
+  box.append(svg);
+}
+async function loadTrend(withSkeleton) {
+  const p = state.gaugeParams || { from: "SHA", to: "CTU", date: localDate(7) };
+  if (withSkeleton) renderGaugeSkeleton();
+  try {
+    const d = await api("/api/trend", p);
+    $("gauge-price").textContent = d.current != null ? "¥" + d.current : "—";
+    $("gauge-route").textContent = d.route || "";
+    $("gauge-date").textContent = d.date ? d.date + " 出发" : "";
+    $("gauge-updated").textContent = "更新于 " + nowTime();
+    $("trend-notice").textContent = d.notice || "";
+    const arc = $("gauge-arc");
+    if (d.current != null && d.day_low != null && d.day_high != null) {
+      renderGaugeArc(d.day_low, d.day_high, d.current);
+    } else {
+      arc.innerHTML = "";
+      arc.append(el("p", "chart-empty", "暂无区间数据"));
+    }
+    renderTrendChart(d.points);
+  } catch (err) {
+    $("gauge-price").textContent = "—";
+    $("gauge-route").textContent = "";
+    $("gauge-date").textContent = "";
+    $("gauge-updated").textContent = "";
+    $("trend-notice").textContent = "";
+    $("gauge-arc").innerHTML = "";
+    const chart = $("trend-chart");
+    chart.innerHTML = "";
+    chart.append(el("p", "chart-empty chart-error", "仪表加载失败：" + err.message));
+  }
+}
+
+/* ---------------- 搜索比价 ---------------- */
+function searchSkeleton() {
+  const w = el("div", "card-flat");
+  w.style.margin = "14px 0";
+  for (let i = 0; i < 6; i++) {
+    w.append(el("div", "skel skel-line" + (i % 3 === 0 ? " w60" : i % 3 === 1 ? " w80" : "")));
+  }
+  return w;
+}
+function emptyState(title, sub) {
+  const w = el("div", "empty-state");
+  w.append(icon("plane"));
+  w.append(el("p", "empty-title", title));
+  if (sub) w.append(el("p", "empty-sub", sub));
+  return w;
+}
+function errorState(title, msg) {
+  const w = el("div", "state-card");
+  w.append(icon("info"));
+  w.append(el("p", "state-title", title));
+  w.append(el("p", "state-msg", msg));
+  return w;
+}
+function setRefreshError(msg) {
+  const box = $("search-status");
+  const old = box.querySelector(".refresh-err");
+  if (old) old.remove();
+  if (msg) box.append(el("div", "notice warn refresh-err", msg));
+}
+function resultMeta(data) {
+  const m = el("div", "result-meta");
+  m.append(el("span", "meta-route", data.route));
+  m.append(el("span", "meta-sub", data.date + " · " + data.weekday));
+  m.append(el("span", "meta-sub", (data.offers ? data.offers.length : 0) + " 个报价"));
+  return m;
+}
+function flagCell(flags) {
+  const td = el("td", "cell-flags");
+  const list = flags || [];
+  if (!list.length) { td.append(el("span", "flag-none", "—")); return td; }
+  list.forEach((f) => td.append(el("span", "flag" + (f.indexOf("售罄") > -1 ? " flag-sold" : ""), f)));
+  return td;
+}
+function renderSearch(out, data) {
+  if (!data.offers.length) {
+    out.append(emptyState(data.empty_hint || "该航线暂无可用报价", "可换个日期或航线再试试。"));
+    return;
+  }
+  const scroll = el("div", "table-scroll");
+  const t = el("table", "offers");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["价格", "票源", "航班 / 套餐", "口径", "说明", "风险标记"].forEach((h) => hr.append(el("th", null, h)));
+  thead.append(hr);
+  t.append(thead);
+  const tb = el("tbody");
+  data.offers.forEach((o) => {
+    const tr = el("tr", o.is_lowest ? "row-lowest" : null);
+    const tdP = el("td", "cell-price");
+    tdP.append(el("strong", "price", "¥" + o.price));
+    if (o.is_lowest) tdP.append(el("span", "mark-lowest", "最低价"));
+    const tdS = el("td", "cell-source");
+    const sname = el("div", "source-name");
+    sname.textContent = o.source_name;
+    if (o.is_deal) sname.append(el("span", "chip chip-deal", "券"));
+    tdS.append(sname);
+    if (o.source_desc) tdS.append(el("div", "source-desc", o.source_desc));
+    tr.append(tdP, tdS,
+      el("td", "cell-product", o.product),
+      el("td", "cell-tax", o.tax_label),
+      el("td", "cell-note", o.note),
+      flagCell(o.risk_flags));
+    tb.append(tr);
+  });
+  t.append(tb);
+  scroll.append(t);
+  out.append(scroll);
+}
+async function runSearch(opts) {
+  const quiet = !!(opts && opts.quiet);
+  const box = $("search-status"), out = $("search-result");
+  const from = $("from").value, to = $("to").value,
+    date = $("date").value, source = $("source").value;
+  state.lastSearch = { from: from, to: to, date: date };
+  if (!quiet) { box.innerHTML = ""; out.innerHTML = ""; out.append(searchSkeleton()); }
+  let data;
+  try {
+    data = await api("/api/search", { from: from, to: to, date: date, source: source });
+  } catch (err) {
+    if (quiet) {
+      setRefreshError("自动刷新失败：" + err.message);
+    } else {
+      box.innerHTML = ""; out.innerHTML = "";
+      out.append(errorState("搜索失败", err.message));
+    }
+    return;
+  }
+  state.gaugeParams = { from: from, to: to, date: date };
+  box.innerHTML = ""; out.innerHTML = "";
+  setRefreshError(null);
+  box.append(resultMeta(data));
+  notice(box, "demo", data.notice);
+  if (data.alert_hit) notice(box, "good", data.alert_hit);
+  if (data.warning) notice(box, "warn", data.warning);
+  (data.failed || []).forEach((n) =>
+    notice(box, "warn", "票源「" + n + "」暂不可用，已跳过（不影响其他票源）。"));
+  renderSearch(out, data);
+  if (!quiet) loadTrend(false);
+}
+$("search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(); });
+
+/* ---------------- 团购专区 ---------------- */
+function dealsSkeleton() {
+  const grid = el("div", "cards");
+  for (let i = 0; i < 3; i++) grid.append(el("div", "skel skel-card"));
+  return grid;
+}
+function dealCard(d) {
+  const soldOut = d.stock === "售罄";
+  const c = el("div", "deal-card" + (soldOut ? " soldout" : ""));
+  const head = el("div", "deal-head");
+  head.append(el("span", "chip chip-source", d.source_name));
+  head.append(el("span", "chip chip-id", d.deal_id));
+  c.append(head);
+  c.append(el("h3", "deal-name", d.name));
+  const priceRow = el("div", "deal-price");
+  priceRow.append(el("strong", null, "¥" + d.price));
+  priceRow.append(el("span", "deal-tax", " / " + d.tax_label));
+  priceRow.append(el("span", "chip " + (soldOut ? "chip-soldout" : "chip-stock"), "库存 " + d.stock));
+  c.append(priceRow);
+  const dl = el("dl", "deal-facts");
+  [["航线", d.route_text], ["有效期", d.validity], ["退改规则", d.refund],
+   ["下单方式", d.purchase], ["限制条件", d.note], ["更新时间", d.updated]]
+    .forEach((kv) => { dl.append(el("dt", null, kv[0])); dl.append(el("dd", null, kv[1])); });
+  c.append(dl);
+  return c;
+}
+async function loadDeals() {
   const box = $("deals-status"), out = $("deals-result");
   box.innerHTML = ""; out.innerHTML = "";
+  out.append(dealsSkeleton());
+  let data;
   try {
-    const data = await api("/api/deals", { from: $("deal-from").value, to: $("deal-to").value });
-    notice(box, "muted", `[模拟数据] 以下团购套餐来自模拟数据源，非真实商品，不能直接购买。`);
-    renderDeals(data);
-  } catch (err) { notice(box, "bad", err.message); }
-});
+    data = await api("/api/deals", { from: $("deal-from").value, to: $("deal-to").value });
+  } catch (err) {
+    box.innerHTML = ""; out.innerHTML = "";
+    out.append(errorState("团购查询失败", err.message));
+    return;
+  }
+  box.innerHTML = ""; out.innerHTML = "";
+  notice(box, "demo", data.notice);
+  if (!data.deals.length) {
+    out.append(emptyState("该航线暂无团购套餐", "清空出发/到达可查看全部套餐。"));
+    return;
+  }
+  data.deals.forEach((d) => out.append(dealCard(d)));
+}
+$("deals-form").addEventListener("submit", (e) => { e.preventDefault(); loadDeals(); });
 
-/* ---- 低价提醒 ---- */
-function renderWatchList(data) {
-  const out = $("watch-list");
-  out.innerHTML = "";
-  if (!data.alerts.length) { out.append(el("p", "empty", "暂无关注航线。设置底价后，每次比价都会自动帮你盯着。")); return; }
-  const t = el("table");
-  const head = el("tr");
-  ["航线", "底价", "设置时间", ""].forEach(h => head.append(el("th", null, h)));
-  t.append(head);
-  data.alerts.forEach(a => {
-    const tr = el("tr");
-    tr.append(el("td", null, `${a.origin} → ${a.destination}`),
-      el("td", "price", "¥" + a.threshold), el("td", null, a.created_at));
-    const td = el("td");
-    const btn = el("button", "plain", "删除");
-    btn.addEventListener("click", async () => {
-      try {
-        const r = await api("/api/watch/remove", { from: a.origin, to: a.destination }, "POST");
-        notice($("watch-status"), "muted", r.message);
-        loadWatchList();
-      } catch (err) { notice($("watch-status"), "bad", err.message); }
-    });
-    td.append(btn); tr.append(td); t.append(tr);
+/* ---------------- 收藏航线 ---------------- */
+function watchSkeleton() {
+  const w = el("div", "watch-grid");
+  for (let i = 0; i < 2; i++) w.append(el("div", "skel skel-row"));
+  return w;
+}
+function watchRow(a) {
+  const below = !!a.below_threshold;
+  const row = el("div", "watch-row" + (below ? " below" : ""));
+  const left = el("div", "watch-route");
+  left.append(el("strong", "route-text", cityName(a.origin) + " → " + cityName(a.destination)));
+  left.append(el("div", "route-sub", "收藏于 " + (a.created_at || "—") +
+    (a.threshold != null ? " · 底价 ¥" + a.threshold : " · 未设底价")));
+  row.append(left);
+  const mid = el("div", "watch-price");
+  mid.append(el("span", "wp-label", "当前最低"));
+  mid.append(el("strong", "wp-num" + (a.current_lowest != null ? "" : " wp-none"),
+    a.current_lowest != null ? "¥" + a.current_lowest : "暂无报价"));
+  if (below) mid.append(el("span", "badge-below", "低于底价"));
+  row.append(mid);
+  const right = el("div", "watch-actions");
+  const go = el("button", "btn ghost small", "去查价");
+  go.type = "button";
+  go.addEventListener("click", () => jumpToSearch(a));
+  const del = el("button", "btn ghost small danger", "删除");
+  del.type = "button";
+  del.addEventListener("click", async () => {
+    del.disabled = true;
+    try {
+      const r = await api("/api/watch/remove", { from: a.origin, to: a.destination }, "POST");
+      await loadWatchList();
+      notice($("watch-status"), "muted", r.message);
+    } catch (err) {
+      del.disabled = false;
+      notice($("watch-status"), "bad", err.message);
+    }
   });
-  out.append(t);
+  right.append(go, del);
+  row.append(right);
+  return row;
 }
 async function loadWatchList() {
   const box = $("watch-status"), out = $("watch-list");
+  box.innerHTML = ""; out.innerHTML = "";
+  out.append(watchSkeleton());
+  let data;
   try {
-    const data = await api("/api/watch/list");
-    box.innerHTML = ""; renderWatchList(data);
-  } catch (err) { out.innerHTML = ""; notice(box, "bad", err.message); }
+    data = await api("/api/watch/list");
+  } catch (err) {
+    box.innerHTML = ""; out.innerHTML = "";
+    out.append(errorState("收藏列表加载失败", err.message));
+    return;
+  }
+  box.innerHTML = ""; out.innerHTML = "";
+  if (!data.alerts.length) {
+    out.append(emptyState("还没有收藏的航线",
+      "从上方选择出发与到达，把常查的航线加进来；底价可设可不设。"));
+    return;
+  }
+  out.append(el("p", "watch-meta", "当前最低价按 " + data.date + " 出发查询 · 演示数据"));
+  const grid = el("div", "watch-grid");
+  data.alerts.forEach((a) => grid.append(watchRow(a)));
+  out.append(grid);
+}
+function jumpToSearch(a) {
+  $("from").value = a.origin;
+  $("to").value = a.destination;
+  if (a.check_date) $("date").value = a.check_date;
+  activateTab("search");
+  $("search-form").requestSubmit();
 }
 $("watch-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const box = $("watch-status");
+  const btn = $("watch-submit");
   box.innerHTML = "";
+  btn.disabled = true;
   try {
     const r = await api("/api/watch/set", {
-      from: $("watch-from").value, to: $("watch-to").value, price: $("watch-price").value }, "POST");
-    notice(box, "good", r.message + " 每次比价或立即检查时自动比对（模拟数据）。");
-    loadWatchList();
-  } catch (err) { notice(box, "bad", err.message); }
-});
-$("watch-check").addEventListener("click", async () => {
-  const box = $("watch-status"), out = $("watch-result");
-  box.innerHTML = ""; out.innerHTML = "";
-  try {
-    const data = await api("/api/watch/check");
-    notice(box, "muted", `${data.notice} 按 ${data.date}（明天）出发的模拟最低价判断：`);
-    data.lines.forEach(l => {
-      const item = el("div", "line-item " + l.status);
-      item.append(el("span", "route", l.route), document.createTextNode(l.text));
-      out.append(item);
-    });
-  } catch (err) { notice(box, "bad", err.message); }
+      from: $("watch-from").value, to: $("watch-to").value, price: $("watch-price").value
+    }, "POST");
+    state.watchLoaded = true;
+    await loadWatchList();
+    notice(box, "info", r.message);
+  } catch (err) {
+    notice(box, "bad", err.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
-/* ---- 初始状态 ---- */
-$("date").value = localDate(7);
-$("search-form").requestSubmit();
+/* ---------------- 自动刷新（页签隐藏时暂停，防累积请求） ---------------- */
+function refreshLive() {
+  loadTrend(false);
+  if (state.lastSearch) runSearch({ quiet: true });
+}
+function setupTimer() {
+  if (state.trendTimer) { clearInterval(state.trendTimer); state.trendTimer = null; }
+  if (state.trendInterval > 0) {
+    state.trendTimer = setInterval(() => {
+      if (!document.hidden) refreshLive();
+    }, state.trendInterval * 1000);
+  }
+}
+$("refresh-rate").addEventListener("change", (e) => {
+  state.trendInterval = Number(e.target.value) || 0;
+  setupTimer();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (state.trendTimer) { clearInterval(state.trendTimer); state.trendTimer = null; }
+  } else {
+    setupTimer();
+    if (state.trendInterval > 0) refreshLive();
+  }
+});
+
+/* ---------------- 初始化：城市/票源 → 仪表 + 首屏搜索 ---------------- */
+async function init() {
+  $("date").value = localDate(7);
+  state.gaugeParams = { from: "SHA", to: "CTU", date: $("date").value };
+  renderGaugeSkeleton();
+  setupTimer();
+  try {
+    const results = await Promise.all([api("/api/cities"), api("/api/sources")]);
+    state.cities = results[0].cities || [];
+    state.cities.forEach((c) => state.cityMap.set(c.code, c.name));
+    fillCitySelect($("from"), "SHA");
+    fillCitySelect($("to"), "CTU");
+    fillCitySelect($("deal-from"), "", true);
+    fillCitySelect($("deal-to"), "", true);
+    fillCitySelect($("watch-from"), "SHA");
+    fillCitySelect($("watch-to"), "PEK");
+    fillSourceSelect(results[1].sources);
+    loadTrend(false);
+    runSearch();
+  } catch (err) {
+    notice($("search-status"), "bad", "页面初始化失败：" + err.message);
+    $("gauge-arc").innerHTML = "";
+    const chart = $("trend-chart");
+    chart.innerHTML = "";
+    chart.append(el("p", "chart-empty chart-error", "仪表加载失败：" + err.message));
+  }
+}
+init();
 </script>
 </body>
 </html>
