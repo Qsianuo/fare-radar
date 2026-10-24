@@ -19,6 +19,8 @@ class AirlineSource(Source):
     source_id = "airline"
     display_name = "航司直连"
     tagline = "航司官网/小程序直飞正班，退改按航司规则"
+    entry_url = ""  # 多家航司无单一入口；前端对空链接不渲染
+    entry_note = "各航司官网/官方小程序"
 
     def search(self, origin, destination, date):
         offers = []

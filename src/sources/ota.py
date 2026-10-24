@@ -16,6 +16,8 @@ class OtaSource(Source):
     source_id = "ota"
     display_name = "OTA 比价"
     tagline = "多平台聚合比价，代理票退改更严、可能收服务费"
+    entry_url = "https://www.ctrip.com/"
+    entry_note = "示例入口：携程官网（OTA 平台之一）"
 
     def search(self, origin, destination, date):
         offers = []

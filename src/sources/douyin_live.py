@@ -25,6 +25,14 @@ class DouyinLiveSource(Source):
     source_id = "douyin_live"
     display_name = "抖音直播间"
     tagline = "直播间限量闪购：价低但库存少、易售罄、有效期短，需进直播间下单"
+    entry_url = "https://www.douyin.com/"
+    entry_note = "抖音 App 内进入对应直播间"
+
+    def availability(self, origin, destination, date):
+        """仅当日闪购场次航线有销售（场次按天确定性轮换）。"""
+        if (origin, destination) in self.flash_routes():
+            return True, None
+        return False, "今日闪购场次未含该航线"
 
     def flash_routes(self):
         """今日闪购场次（确定性按天轮换），供 search 与 deals 共用。"""

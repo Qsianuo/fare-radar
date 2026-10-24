@@ -44,7 +44,7 @@ class _BrokenSource:
 
 class MergeAndSortTest(unittest.TestCase):
     def test_collect_merges_all_sources(self):
-        offers, failed = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 15))
+        offers, failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 15))
         self.assertEqual(failed, [])
         source_ids = {o["source_id"] for o in offers}
         self.assertEqual(
@@ -54,7 +54,7 @@ class MergeAndSortTest(unittest.TestCase):
 
     def test_rank_offers_comparable_first_then_price(self):
         date = dt.date(2026, 11, 15)
-        offers, _ = fr.collect(all_sources(), "SHA", "CTU", date)
+        offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", date)
         offers = fr.rank_offers(offers, date)
         eligible = sorted(o["price"] for o in offers if fr.eligible_for_lowest(o, date))
         ineligible = sorted(o["price"] for o in offers if not fr.eligible_for_lowest(o, date))
@@ -89,7 +89,7 @@ class TaxComparabilityTest(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 fr.main(["search", "--from", "SHA", "--to", "PEK", "--date", "2026-11-03"])
-            offers, _ = fr.collect(all_sources(), "SHA", "PEK", dt.date(2026, 11, 3))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "PEK", dt.date(2026, 11, 3))
         expected = fr.lowest_eligible(offers, dt.date(2026, 11, 3))["price"]
         lines = buf.getvalue().splitlines()
         self.assertTrue(any("税费另计" in ln for ln in lines),
@@ -104,7 +104,7 @@ class TaxComparabilityTest(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 fr.main(["search", "--from", "SHA", "--to", "KIX", "--date", "2026-12-20"])
-            offers, _ = fr.collect(all_sources(), "SHA", "KIX", dt.date(2026, 12, 20))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "KIX", dt.date(2026, 12, 20))
         expected = fr.lowest_eligible(offers, dt.date(2026, 12, 20))["price"]
         lines = buf.getvalue().splitlines()
         marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
@@ -183,7 +183,7 @@ class ValidityEligibilityTest(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 fr.main(["search", "--from", "SHA", "--to", "CTU", "--date", "2026-11-20"])
-            offers, _ = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
         expected = fr.lowest_eligible(offers, dt.date(2026, 11, 20))["price"]
         self.assertTrue(430 <= expected <= 500, "覆盖日最低价应为精选券价格带")
         lines = buf.getvalue().splitlines()
@@ -198,7 +198,7 @@ class ValidityEligibilityTest(unittest.TestCase):
 
 class SourceFailureTest(unittest.TestCase):
     def test_broken_source_degrades(self):
-        offers, failed = fr.collect(all_sources() + [_BrokenSource()], "SHA", "PEK",
+        offers, failed, _unavailable = fr.collect(all_sources() + [_BrokenSource()], "SHA", "PEK",
                                     dt.date(2026, 11, 15))
         self.assertEqual(failed, ["故障源(模拟)"])
         self.assertTrue(offers, "其余票源应照常返回")
@@ -508,13 +508,24 @@ class AnyRoutePricingTest(unittest.TestCase):
     def test_remote_routes_all_sources_quote(self):
         for origin, destination in (("HRB", "SYX"), ("KMG", "HKG"), ("SHA", "NRT")):
             with pricing.fixed_minute(PINNED_MINUTE):
-                offers, failed = fr.collect(all_sources(), origin, destination, dt.date(2026, 11, 20))
+                offers, failed, unavailable = fr.collect(all_sources(), origin, destination,
+                                                         dt.date(2026, 11, 20))
             self.assertEqual(failed, [])
-            self.assertGreaterEqual(len({o["source_id"] for o in offers}), 3,
-                                    f"{origin}→{destination} 应有至少 3 个票源出价")
+            quoted = {o["source_id"] for o in offers}
+            self.assertGreaterEqual(len(quoted), 2, f"{origin}→{destination} 至少航司与 OTA 出价")
+            self.assertIn("airline", quoted)
+            self.assertIn("ota", quoted)
             for offer in offers:
                 self.assertGreater(offer["price"], 0)
                 self.assertIn(offer["tax_included"], (True, False))
+                self.assertIn("entry_url", offer, "比价行由引擎附上渠道入口字段")
+            # 覆盖模型不变式：每个票源要么有报价、要么显式报"无销售"，不得凭空消失
+            accounted = quoted | {u["source_id"] for u in unavailable}
+            self.assertEqual(accounted, {s.source_id for s in all_sources()},
+                             f"{origin}→{destination}: 票源有报价/无销售必须二选一且可解释")
+            self.assertIn("douyin_groupbuy", {u["source_id"] for u in unavailable})
+            for u in unavailable:
+                self.assertTrue(u["name"] and u["reason"])
 
     def test_far_routes_cost_more_than_near_ones(self):
         far = pricing.route_base("HRB", "SYX")     # 哈尔滨-三亚 ≈ 3300km
@@ -547,7 +558,7 @@ class FiveSourceFamilyTest(unittest.TestCase):
 
     def test_line_names_carry_no_mock_word(self):
         with pricing.fixed_minute(PINNED_MINUTE):
-            offers, _ = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
         for offer in offers:
             self.assertNotIn("模拟", offer["source_name"], "行内票源名去术语（ISSUE-009 第 3 点）")
 
@@ -559,7 +570,7 @@ class FiveSourceFamilyTest(unittest.TestCase):
         self.assertIn(None, [d.get("refund_change_rules") for d in deals],
                       "DY-005 缺退改规则的'未披露'测试资产必须保留")
         with pricing.fixed_minute(PINNED_MINUTE):
-            offers, _ = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))
         self.assertTrue(any(not o["tax_included"] for o in offers), "不含税报价资产必须存在")
 
     def test_live_flash_schedule_is_deterministic(self):
@@ -594,7 +605,7 @@ class DemoFluctuationTest(unittest.TestCase):
         airline_prices = set()
         for offset in range(30):
             with pricing.fixed_minute(PINNED_MINUTE + offset):
-                offers, _ = fr.collect(all_sources(), "SHA", "PEK", dt.date(2026, 11, 3))
+                offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "PEK", dt.date(2026, 11, 3))
             for offer in offers:
                 if offer["source_id"] == "airline" and offer["tax_included"]:
                     airline_prices.add(offer["price"])
@@ -617,6 +628,76 @@ class ExitCodeTest(unittest.TestCase):
 
     def test_no_command_returns_nonzero(self):
         self.assertEqual(fr.main([]), 2)
+
+
+class SourceCoverageTest(unittest.TestCase):
+    """ISSUE-010 回归：票源覆盖模型——真实渠道不存在的航班不编价。"""
+
+    OFFICIAL_MINIAPP_URL = ("https://www.iesdouyin.com/share/microapp/"
+                            "?token=QjdDMUQzOTlCQkU2NzZqc2I2YTdt&share_channel=copy")
+
+    def test_cgo_xiy_has_no_miniapp_quote(self):
+        # 提交人复现场景：郑州→西安 2026-10-26，真实春秋小程序"暂无可销售座位"
+        miniapp = [s for s in all_sources() if s.source_id == "douyin_miniapp"][0]
+        available, reason = miniapp.availability("CGO", "XIY", dt.date(2026, 10, 26))
+        self.assertFalse(available, "非春秋基地航线不得出价（不编造）")
+        self.assertIn("基地航线", reason)
+        with pricing.fixed_minute(PINNED_MINUTE):
+            offers, _failed, unavailable = fr.collect(all_sources(), "CGO", "XIY", dt.date(2026, 10, 26))
+        self.assertNotIn("douyin_miniapp", {o["source_id"] for o in offers})
+        self.assertIn("douyin_miniapp", {u["source_id"] for u in unavailable})
+
+    def test_cli_reports_unavailable_sources(self):
+        with pricing.fixed_minute(PINNED_MINUTE):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = fr.main(["search", "--from", "CGO", "--to", "XIY",
+                                "--date", "2026-10-26"])
+        out = buf.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("以下渠道本次无销售", out, "与'[提示] 暂不可用'降级提示区分")
+        self.assertIn("抖音小程序·春秋航空", out)
+        self.assertIn("可能未执飞", out)
+        self.assertNotIn("春秋特价直飞", out, "无销售的渠道不得出现在报价行")
+
+    def test_base_route_still_quotes_and_no_seat_day_deterministic(self):
+        miniapp = [s for s in all_sources() if s.source_id == "douyin_miniapp"][0]
+        # 基地航线（SHA 为一端）通常可出价
+        available, _ = miniapp.availability("SHA", "CGO", dt.date(2026, 11, 2))
+        self.assertTrue(available)
+        # 无座日按日期哈希确定性复现，且频率约 1/7（35 天 3-7 天）
+        no_seat = [d for d in (dt.date(2026, 11, 1) + dt.timedelta(days=i) for i in range(35))
+                   if not miniapp.availability("SHA", "CGO", d)[0]]
+        self.assertTrue(3 <= len(no_seat) <= 7, f"无座日频率应约 1/7，实际 {len(no_seat)}/35")
+        probe = no_seat[0]
+        self.assertEqual(miniapp.availability("SHA", "CGO", probe),
+                         miniapp.availability("SHA", "CGO", probe), "同日期两次判定一致")
+        with pricing.fixed_minute(PINNED_MINUTE):
+            offers, _f, unavailable = fr.collect(all_sources(), "SHA", "CGO", probe)
+        self.assertNotIn("douyin_miniapp", {o["source_id"] for o in offers})
+        reasons = {u["source_id"]: u["reason"] for u in unavailable}
+        self.assertIn("当日无座", reasons["douyin_miniapp"])
+
+    def test_entry_url_contract(self):
+        catalog = {s["id"]: s for s in source_catalog()}
+        self.assertEqual(catalog["douyin_miniapp"]["entry_url"], self.OFFICIAL_MINIAPP_URL)
+        self.assertEqual(catalog["douyin_miniapp"]["entry_note"], "春秋航空抖音小程序")
+        self.assertEqual(catalog["douyin_groupbuy"]["entry_url"],
+                         "https://v.douyin.com/dIviP77Fqow/")
+        self.assertEqual(catalog["douyin_groupbuy"]["entry_note"],
+                         "春秋航空 · 固定航线机票（抖音地点页）")
+        self.assertEqual(catalog["douyin_live"]["entry_url"], "https://www.douyin.com/")
+        self.assertEqual(catalog["airline"]["entry_url"], "", "多家航司无单一入口，允许为空")
+        self.assertTrue(catalog["airline"]["entry_note"])
+        self.assertIn("示例入口", catalog["ota"]["entry_note"])
+        for entry in catalog.values():
+            self.assertIn("entry_url", entry)
+            self.assertIn("entry_note", entry)
+        # 报价行携带所在渠道入口（引擎统一附上）
+        with pricing.fixed_minute(PINNED_MINUTE):
+            offers, _f, _u = fr.collect(all_sources(), "SHA", "CGO", dt.date(2026, 11, 2))
+        for offer in offers:
+            self.assertEqual(offer["entry_url"], catalog[offer["source_id"]]["entry_url"])
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class WebApiTest(unittest.TestCase):
         with pricing.fixed_minute(PINNED_MINUTE):
             status, payload = webapp._api_search(
                 {"from": "SHA", "to": "CTU", "date": "2026-11-20"})
-            offers, _ = fr.collect(all_sources(), "SHA", "CTU", fr.parse_date("2026-11-20"))
+            offers, _failed, _unavailable = fr.collect(all_sources(), "SHA", "CTU", fr.parse_date("2026-11-20"))
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["offers"], "SHA-CTU 应有报价")
@@ -88,6 +88,43 @@ class WebApiTest(unittest.TestCase):
             status, payload = api({"from": "SHA", "to": "PEK", "price": "700"})
             self.assertEqual(status, 409, api.__name__)
             self.assertIn("数据未被改动", payload["error"], "损坏时必须承诺不覆盖（ISSUE-002 规则）")
+
+
+class V131CoverageContractTest(unittest.TestCase):
+    """v1.3.1：票源覆盖模型与渠道入口的 API 契约（ISSUE-010）。"""
+
+    def test_search_payload_reports_unavailable_sources(self):
+        status, payload = webapp._api_search({"from": "CGO", "to": "XIY", "date": "2026-10-26"})
+        self.assertEqual(status, 200)
+        self.assertNotIn("douyin_miniapp", {o["source_id"] for o in payload["offers"]},
+                         "非春秋基地航线不得出现小程序报价（不编造）")
+        unavailable = {u["source_id"]: u for u in payload["unavailable_sources"]}
+        self.assertIn("douyin_miniapp", unavailable)
+        self.assertEqual(unavailable["douyin_miniapp"]["name"], "抖音小程序·春秋航空")
+        self.assertIn("春秋基地", unavailable["douyin_miniapp"]["reason"])
+        self.assertTrue(all(u.get("reason") for u in unavailable.values()))
+        # 与 failed（异常降级）语义区分：本次无异常，failed 应为空
+        self.assertEqual(payload["failed"], [])
+        for offer in payload["offers"]:
+            self.assertIn("entry_url", offer, "报价行携带渠道入口")
+            self.assertIn("entry_note", offer)
+
+    def test_sources_and_deals_carry_entry_url(self):
+        _, sources = webapp._api_sources({})
+        by_id = {s["id"]: s for s in sources["sources"]}
+        self.assertEqual(by_id["douyin_miniapp"]["entry_url"],
+                         "https://www.iesdouyin.com/share/microapp/"
+                         "?token=QjdDMUQzOTlCQkU2NzZqc2I2YTdt&share_channel=copy")
+        self.assertEqual(by_id["douyin_groupbuy"]["entry_url"],
+                         "https://v.douyin.com/dIviP77Fqow/")
+        self.assertEqual(by_id["airline"]["entry_url"], "", "多家航司允许无单一入口")
+        _, deals = webapp._api_deals({"from": "SHA", "to": "CTU"})
+        self.assertTrue(deals["deals"])
+        for card in deals["deals"]:
+            self.assertIn("entry_url", card)
+            self.assertIn("entry_note", card)
+        self.assertTrue(any(c["entry_url"].startswith("https://v.douyin.com/")
+                            for c in deals["deals"]), "团购卡应带地点页入口")
 
 
 if __name__ == "__main__":
