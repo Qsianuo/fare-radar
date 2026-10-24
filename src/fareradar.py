@@ -112,9 +112,11 @@ def _validity_state(offer, date):
 
 
 def eligible_for_lowest(offer, date):
-    """可竞争"◀ 最低价"的准入条件（PRD v1.1 AC1-R/AC6；AC7 随 ISSUE-004 加入）。"""
+    """可竞争"◀ 最低价"的准入条件（PRD v1.1 AC1-R/AC6/AC7）。"""
     if not offer.get("tax_included"):
         return False  # ISSUE-001：口径不可比（不含税）
+    if offer.get("is_deal") and offer.get("stock") == "售罄":
+        return False  # ISSUE-004：售罄券买不到，不参与最低价竞争
     if offer.get("is_deal") and _validity_state(offer, date) != "covered":
         return False  # ISSUE-003：券有效期不覆盖（或无法确认覆盖）出发日期
     return True
@@ -138,6 +140,8 @@ def search_note(offer, date):
     if not offer.get("tax_included"):
         note += "｜税费另计，到手价高于票面"
     if offer.get("is_deal"):
+        if offer.get("stock") == "售罄":
+            note += "｜已售罄，暂时抢不到"
         state = _validity_state(offer, date)
         if state == "not_covered":
             note += f"｜有效期不覆盖 {date.isoformat()} 出发"
