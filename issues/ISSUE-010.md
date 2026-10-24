@@ -67,7 +67,14 @@
 
 ## Test（Tester 填）
 
-- （测试工程师 v1.3.1 回归后回填；总协调者浏览器实测：郑州→西安春秋小程序 0 报价 + 3 条无销售原因披露 + 渠道链接渲染正确。）
+- 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 66f0869（v1.3.1）| 方式: API/CLI 黑盒（`python src/webapp.py --port 8082`）| 结论: **聚焦回归全部通过，未发现新问题**
+- **① 评审人原始场景（CGO→XIY 2026-10-26）**：春秋小程序 **0 报价**；`unavailable_sources` 恰 3 条中文原因（"仅精选套餐航线，该航线未上团购"/"仅覆盖春秋基地航线（上海/沈阳/深圳/大阪至少一端），该航线可能未执飞"/"今日闪购场次未含该航线"）；航司直连/OTA 正常出价（¥368/¥332 含税 + 2 行不含税带"税费另计"）；行级 `entry_url` 正确（ota=ctrip、airline 留空仅 note"各航司官网/官方小程序"）。**编造价不再复现。**
+- **② 覆盖不变式（3 条基地航线）**：SHE→KIX ¥637、SZX→PEK ¥868 均有 miniapp 报价且 `entry_url` 与评审人官方分享链接**逐字一致**（token 逐字比对通过）；SHA→CTU 的 10-26 恰为"当日无座"日（unavailable 原因"当日无座（可能未执飞或当日售罄）…"），按预案换 10-27 复验 → miniapp ¥779 正常出价。三航线覆盖结论成立。
+- **③ "当日无座"确定性**：同日期两次请求判定一致（无随机）；频率核验——先抽 35 天（11-01~12-05）得 2 个无座日（低于预期区间），扩大为 70 天×2 条基地航线复测：SHA→CTU **9 个**、SHE→KIX **10 个**（1/7≈10），频率与"约 1/7"相符；首测 35 天窗口属稀疏段，非缺陷。两条航线的无座日集合不同（如 10-26 SHA→CTU 无座而 SHE→KIX 有票），证明哈希含航线维度。
+- **④ 三态语义**：响应字段 `failed`（异常降级）与 `unavailable_sources`（无销售）分离存在（本场景 failed=[]、unavailable 3 条，互不混淆）；单票源过滤（`source=douyin_miniapp`＋CGO→XIY）触发"全渠道无销售"：API `offers=[]`＋`empty_hint="本次查询所选渠道均无销售，原因见 unavailable_sources。"`，CLI 输出"本次查询所选渠道均无销售，原因见上；可更换日期或航线再试。"退出码 0。failed 路径黑盒无法注入故障源（自 v1.0 起仅单测可注入），以字段分离＋单测（FaultInjection 相关用例）为间接证据。
+- **⑤ 不回退抽查**：准入规则完整——PEK→SHA 2026-11-10 风险标记齐（"已售罄，暂时抢不到"×团购、"税费另计，到手价高于票面"×航司/OTA）；`/api/sources` 五渠道 entry_url 与 PR-010 分配表逐字一致（miniapp=iesdouyin 官方分享、groupbuy=v.douyin.com/dIviP77Fqow/、live=douyin.com、ota=ctrip、airline 空+note）；alerts.json 损坏 409（list/set 均拒、文件 md5 不变）、非法日期 400 中文报错均保持。
+- **单测**：`python -m unittest discover tests` → **Ran 66 tests, OK**。
+- 备注：CLI"以下渠道本次无销售：XX（原因）"披露行与降级提示"[提示] XX 暂不可用"措辞已区分；全渠道无销售行在 API 经 empty_hint、在 CLI 经文案行双端披露。
 
 ## User Acceptance（User 填）
 
