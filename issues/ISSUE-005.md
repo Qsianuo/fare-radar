@@ -45,6 +45,8 @@
 ## Reproduce（Dev 填）
 ## Fix（Dev 填）
 ## Code Review（总协调者填）
+
+- 评审说明：本单为 ISSUE-001 的重复单，不设独立评审；其 KIX 案例已并入 PR-002（详见 prs/PR-002.md）的评审与回归范围。
 ## Test（Tester 回归填）
 ## User Acceptance（User 填）
 

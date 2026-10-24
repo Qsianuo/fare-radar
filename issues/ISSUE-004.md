@@ -69,6 +69,10 @@
 - 自测: 33 例全绿。
 
 ## Code Review（总协调者填）
+
+- 评审记录：**通过**，详见 prs/PR-005.md 的 Code Review 节（2026-10-24）。
+- 评审要点：售罄影响"准入"而非"展示"，修在准入层是正确的层次选择；src 仅改 6 行。
+- 产物：fix/issue-004 分支，合并提交 131de13（main）。
 ## Test（Tester 回归填）
 - 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**（正式 User Acceptance 由 User A 另行填写）
 - 原复现命令 1 `search --from PEK --to SHA --date 2026-11-10` 新输出关键行（exit=0）：

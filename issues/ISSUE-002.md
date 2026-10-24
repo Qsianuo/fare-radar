@@ -76,6 +76,9 @@ $ python src/fareradar.py watch --from SHA --to CTU --price 500
 
 ## Code Review（总协调者填）
 
+- 评审记录：**通过**，详见 prs/PR-003.md 的 Code Review 节（2026-10-24）。
+- 评审要点：三态分离（缺失=空/损坏=拒绝/正常=读）；评审中实测损坏文件"警告+退出码 2+原文件逐字节保留"。
+- 产物：fix/issue-002 分支，合并提交 3ad3676（main）。
 ## Test（Tester 回归填）
 
 - 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**

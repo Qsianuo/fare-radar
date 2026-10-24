@@ -76,6 +76,10 @@
 - 自测: 35 例全绿（tests/test-run-v1.1.log）；提交人复现命令重跑，卡面不再出现任何内部术语。
 
 ## Code Review（总协调者填）
+
+- 评审记录：**通过**，详见 prs/PR-006.md 的 Code Review 节（2026-10-24）。
+- 评审要点：术语黑话清零且未用补数据方式消灭场景（遵守 PM 约束，测试资产保留）；"退改不明"标记使风险可见。
+- 产物：fix/issue-006 分支，合并提交 921dba4（main）。
 ## Test（Tester 回归填）
 - 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**（正式 User Acceptance 由 User A 另行填写）
 - 原复现命令 `deals --from SHA --to CTU`，DY-005 卡新输出关键行：

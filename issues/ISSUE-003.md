@@ -75,6 +75,9 @@ $ python src/fareradar.py search --from SHA --to CTU --date 2026-10-24
 
 ## Code Review（总协调者填）
 
+- 评审记录：**通过**，详见 prs/PR-004.md 的 Code Review 节（2026-10-24）。
+- 评审要点：有效期缺失/不可解析按"不覆盖"处理（宁可不推荐，不猜测）；提醒与最低价标记共用同一准入点，输出不会自相矛盾。
+- 产物：fix/issue-003 分支，合并提交 25d3ee8（main）。
 ## Test（Tester 回归填）
 
 - 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**

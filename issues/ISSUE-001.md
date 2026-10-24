@@ -71,6 +71,9 @@ $ python src/fareradar.py search --from SHA --to PEK --date 2026-11-03
 
 ## Code Review（总协调者填）
 
+- 评审记录：**通过**，详见 prs/PR-002.md 的 Code Review 节（2026-10-24）。
+- 评审要点：准入式设计（eligible_for_lowest/rank_offers/lowest_eligible）把口径规则收敛到单一函数；ISSUE-005 的 KIX 场景并入本单回归。
+- 产物：fix/issue-001 分支，合并提交 625e794（main）。
 ## Test（Tester 回归填）
 
 - 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**
