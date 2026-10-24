@@ -73,14 +73,15 @@
 - 来源：产品评审人在成果演示后提出"命令行不直观，网页会更直观"——立项 ISSUE-007（✨新功能）。因用户在等待，本次由总协调者代行 PM 分诊（已在 issue 内注明），两条裁定：Web 必须复用 CLI 同一套规则、只绑本机 + 模拟数据声明。
 - 实现（feature/web-ui 分支）：src/webapp.py（标准库 http.server，/api/* 全部调用 fr.* 同一批函数，零规则复制）+ src/webapp.html（三页签界面）+ tests/test_webapp.py（4 例）+ README 增补。
 - PR-007 评审（通过）→ 合并 main（`7c4b1e3`）；全库 39 例单测全绿；发布 RELEASE-v1.2.0 并打 tag。
-- 生命周期状态：Submitted → Triage → Reproduce → Fix → Code Review → Test 均已留痕；**User Acceptance 待产品评审人实际体验后关闭 ISSUE-007**。
-- 过程备注：轻量流程（单角色代行）与 S1-S6 的完整多角色流程形成对照，两者都留有书面痕迹，供评审比较。
+- 浏览器实测补记：v1.2.0 验收时发现真 Bug——网页"设底价/删除关注"的请求以 GET 发往 POST 路由，静默失效（单测直调函数层、curl 冒烟均覆盖不到，只有 GUI 黑盒测试能暴露）。立项 ISSUE-008 → fix/web-watch-post 分支 → PR-008 评审合并 → **v1.2.1 补丁**（tag）。三页签在浏览器全部实测通过（截图存档于评审会话）。
+- 生命周期状态：ISSUE-007/008 的 Submitted → Triage → Reproduce → Fix → Code Review → Test 均已留痕；**User Acceptance 待产品评审人实际体验后关闭**。
 
 ## 版本记录（续）
 
 | 版本 | 内容 | 位置 |
 |---|---|---|
 | v1.2.0 | 网页版上线（三页签，复用 CLI 规则） | tag v1.2.0，PR-007 |
+| v1.2.1 | 修复网页 watch GET/POST 契约断裂 | tag v1.2.1，PR-008 |
 
 ## 过程改进记录（复盘用）
 
