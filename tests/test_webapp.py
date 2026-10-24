@@ -17,6 +17,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import fareradar as fr  # noqa: E402
 import webapp  # noqa: E402
+from sources import all_sources, pricing  # noqa: E402
+
+PINNED_MINUTE = 29_500_000  # 价格随分钟演示波动：涉价断言先固定查询时刻
 
 
 class WebApiTest(unittest.TestCase):
@@ -28,14 +31,19 @@ class WebApiTest(unittest.TestCase):
         fr.ALERTS_FILE = Path(tmp.name) / "alerts.json"
 
     def test_search_payload_contract(self):
-        status, payload = webapp._api_search(
-            {"from": "SHA", "to": "CTU", "date": "2026-11-20"})
+        with pricing.fixed_minute(PINNED_MINUTE):
+            status, payload = webapp._api_search(
+                {"from": "SHA", "to": "CTU", "date": "2026-11-20"})
+            offers, _ = fr.collect(all_sources(), "SHA", "CTU", fr.parse_date("2026-11-20"))
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["offers"], "SHA-CTU 应有报价")
         lowest = payload["offers"][0]
         self.assertTrue(lowest["is_lowest"], "首行应为最低价行")
-        self.assertEqual(lowest["price"], 459, "准入规则与 CLI 一致：含税 ¥459 券拿最低价")
+        self.assertEqual(lowest["price"],
+                         fr.lowest_eligible(offers, fr.parse_date("2026-11-20"))["price"],
+                         "网页最低价与 CLI 规则一致（引擎+演示波动）")
+        self.assertTrue(430 <= lowest["price"] <= 490, "SHA-CTU 最低价应在精选券 459±波动带内")
         ineligible = [o for o in payload["offers"] if o["tax_label"] == "不含税"]
         self.assertTrue(ineligible)
         self.assertFalse(any(o["is_lowest"] for o in ineligible),
@@ -61,7 +69,11 @@ class WebApiTest(unittest.TestCase):
         self.assertEqual(listed["alerts"][0]["threshold"], 700)
         status, payload = webapp._api_watch_check({})
         self.assertEqual(status, 200)
-        self.assertEqual(payload["lines"][0]["status"], "wait")
+        # 引擎定价下 SHA→PEK 明日可比最低价恒低于 700（五源准入后取最小）
+        self.assertEqual(payload["lines"][0]["status"], "hit")
+        webapp._api_watch_set({"from": "SHA", "to": "PEK", "price": "1"})
+        _, payload = webapp._api_watch_check({})
+        self.assertEqual(payload["lines"][0]["status"], "wait", "底价 1 元必不命中")
         status, payload = webapp._api_watch_remove({"from": "SHA", "to": "PEK"})
         self.assertEqual((status, payload["ok"]), (200, True))
         _, listed = webapp._api_watch_list({})
