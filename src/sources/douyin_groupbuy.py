@@ -38,8 +38,8 @@ _DEALS = [
      "name": "川航联营 上海-成都 双城券", "price": 459, "tax_included": True,
      "valid_from": "2026-11-15", "valid_until": "2026-12-10", "stock": "充足",
      "purchase_entry": _PURCHASE_ENTRY, "updated_at": "2026-10-24",
-     "note": "模拟源数据不完整：退改规则字段缺失"},
-    # DY-005 无 refund_change_rules 键 → 上层必须显示"未披露"
+     "note": "可约航班以下单页实际展示为准"},
+    # DY-005 无 refund_change_rules 键 → 上层必须显示"未披露"（诚实披露红线的测试资产）
 ]
 
 
@@ -70,6 +70,7 @@ class DouyinGroupbuySource(Source):
             "tax_included": deal["tax_included"],
             "is_deal": True,
             "stock": deal.get("stock"),
+            "refund_disclosed": bool(deal.get("refund_change_rules")),
             "valid_from": deal.get("valid_from"),
             "valid_until": deal.get("valid_until"),
             "note": ("团购 ▶ 需抖音App下单｜"

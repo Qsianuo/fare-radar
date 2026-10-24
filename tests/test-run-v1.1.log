@@ -1,0 +1,60 @@
+test_alerts_roundtrip (test_fareradar.AlertTest) ... ok
+test_load_missing_returns_empty (test_fareradar.AlertTest) ... ok
+test_watch_check_hit (test_fareradar.AlertTest) ... ok
+test_watch_check_miss (test_fareradar.AlertTest) ... ok
+test_load_corrupted_warns_and_raises (test_fareradar.AlertsCorruptionTest) ... ok
+test_set_refuses_and_keeps_corrupted_file_intact (test_fareradar.AlertsCorruptionTest) ... ok
+test_watch_check_warns_instead_of_showing_empty_list (test_fareradar.AlertsCorruptionTest) ... ok
+test_invalid_code_rejected (test_fareradar.CodeValidationTest) ... ok
+test_lowercase_normalized (test_fareradar.CodeValidationTest) ... ok
+test_bad_format_rejected (test_fareradar.DateValidationTest) ... ok
+test_past_date_rejected (test_fareradar.DateValidationTest) ... ok
+test_valid_date (test_fareradar.DateValidationTest) ... ok
+test_deal_without_refund_rules_shows_disclose (test_fareradar.DiscloseTest) ... ok
+test_disclose_fallback (test_fareradar.DiscloseTest) ... ok
+test_missing_date_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：--date 需为 YYYY-MM-DD 格式（如 2026-11-15），收到：None
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_no_command_returns_nonzero (test_fareradar.ExitCodeTest) ... ok
+test_same_origin_destination_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：出发地与到达地不能相同
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_unknown_source_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：--source 未知票源：nope（可选：simulated_airline、douyin_groupbuy）
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_collect_merges_all_sources (test_fareradar.MergeAndSortTest) ... ok
+test_rank_offers_comparable_first_then_price (test_fareradar.MergeAndSortTest) ... ok
+test_search_output_contract (test_fareradar.MergeAndSortTest) ... ok
+test_complete_deal_card_contract (test_fareradar.RefundDisclosureTest) ... ok
+test_no_internal_jargon_in_any_command_output (test_fareradar.RefundDisclosureTest) ... ok
+test_search_row_marks_refund_unclear (test_fareradar.RefundDisclosureTest) ... ok
+test_sold_out_check_in_eligibility (test_fareradar.SoldOutEligibilityTest) ... ok
+test_sold_out_deal_not_marked_and_disclosed (test_fareradar.SoldOutEligibilityTest) ... ok
+test_broken_source_degrades (test_fareradar.SourceFailureTest) ... ok
+test_search_reports_unavailable_source (test_fareradar.SourceFailureTest) ... ok
+test_kix_case_marker_on_comparable_row (test_fareradar.TaxComparabilityTest) ... ok
+test_lowest_eligible_ignores_non_tax_rows (test_fareradar.TaxComparabilityTest) ... ok
+test_no_eligible_lowest_when_all_non_tax (test_fareradar.TaxComparabilityTest) ... ok
+test_search_discloses_tax_and_marks_comparable_lowest (test_fareradar.TaxComparabilityTest) ... ok
+test_covered_deal_still_lowest (test_fareradar.ValidityEligibilityTest) ... ok
+test_not_covered_deal_excluded_and_no_alert (test_fareradar.ValidityEligibilityTest) ... ok
+test_unknown_validity_treated_as_not_covered (test_fareradar.ValidityEligibilityTest) ... ok
+
+----------------------------------------------------------------------
+Ran 35 tests in 0.295s
+
+OK
+usage: fareradar [-h] {search,deals,watch} ...
+
+低价票雷达：把航司直连价与抖音团购套餐放在一起比（内置模拟数据源，不能购票）。
+
+positional arguments:
+  {search,deals,watch}
+    search              搜索比价：多票源合并，价格升序，标注最低价
+    deals               团购专区：套餐卡含价格/有效期/退改规则/下单提示
+    watch               低价提醒：设置/列表/删除底价；裸 watch 立即检查全部关注
+
+options:
+  -h, --help            show this help message and exit
+
+示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15

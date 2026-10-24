@@ -212,8 +212,37 @@ class DiscloseTest(unittest.TestCase):
                       if "refund_change_rules" not in d]
         self.assertEqual(len(incomplete), 1, "模拟数据应含一条退改规则缺失的套餐(DY-005)")
         card = "\n".join(fr._deal_card(incomplete[0]))
-        self.assertIn("退改规则：未披露", card)
+        self.assertIn("商家未公布退改规则", card, "兜底文案必须是用户语言的风险提示")
+        self.assertIn("核对退改条款", card)
+        self.assertIn("截图留证", card)
         self.assertNotIn("退改规则：\n", card)
+
+
+class RefundDisclosureTest(unittest.TestCase):
+    """ISSUE-006 回归：内部术语不得透出；search 结果中退改不明的券必须带标记。"""
+
+    JARGON = ("字段缺失", "数据不完整", "模拟源数据")
+
+    def test_search_row_marks_refund_unclear(self):
+        # SHA→CTU 2026-11-20：DY-005 有效期覆盖且充足 → 可为最低价，但行内必须带"退改不明"
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fr.main(["search", "--from", "SHA", "--to", "CTU", "--date", "2026-11-20"])
+        lines = buf.getvalue().splitlines()
+        self.assertTrue(any("双城券" in ln and "退改不明" in ln for ln in lines))
+        marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
+        self.assertIn("¥459", lines[marker - 1])
+
+    def test_no_internal_jargon_in_any_command_output(self):
+        for argv in (["search", "--from", "SHA", "--to", "CTU", "--date", "2026-11-20"],
+                     ["deals"], ["deals", "--from", "SHA", "--to", "CTU"], ["watch"]):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                fr.main(argv)
+            out = buf.getvalue()
+            for word in self.JARGON:
+                self.assertNotIn(word, out, f"{argv[0]} 输出透出内部术语：{word}")
+            self.assertNotIn("Traceback", out)
 
     def test_complete_deal_card_contract(self):
         card = "\n".join(fr._deal_card(DouyinGroupbuySource().deals("SHA", "PEK")[0]))
