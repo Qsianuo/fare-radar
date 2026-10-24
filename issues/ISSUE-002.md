@@ -78,6 +78,14 @@ $ python src/fareradar.py watch --from SHA --to CTU --price 500
 
 ## Test（Tester 回归填）
 
+- 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 921dba4（v1.1.0）| 结论: **原问题不再复现，回归通过**
+- 原复现步骤 1-5 原样重跑（设置关注 PEK ¥700 → `printf '{oops broken' > alerts.json` → 裸 `watch` → 损坏状态下设置 → 查文件）：
+  - 裸 `watch`：输出 `[警告] 关注文件 alerts.json 已损坏，无法读取，本次操作已取消（你的数据不会被覆盖）。`＋"请先用文本编辑器备份并修复 alerts.json；确认不再需要后也可删除它，再重新设置关注。"；退出码 **2**；"暂无关注航线"零命中（AC9）。
+  - 损坏状态下 `watch --from SHA --to CTU --price 500`：同样警告，退出码 **2**，"已保存关注"零命中。
+  - `alerts.json` 操作前后 md5 均为 `b2821604011773ad31277064d8804984`——**逐字节一致**，原损坏文件原样保留，用户数据可手工找回/修复（AC10）。
+- 修复文件（写回合法 JSON）后：`watch --list`／设置／裸 `watch` 全部恢复正常，TC-08/09/10 行为不回归。
+- 无新回归。
+
 ## User Acceptance（User 填）
 
 ## Closed（PM 填，关联 PR/版本）
