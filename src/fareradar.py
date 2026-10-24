@@ -101,24 +101,48 @@ def collect(sources, origin, destination, date):
     return offers, failed
 
 
-def rank_offers(offers):
-    """展示排序（ISSUE-001）："◀ 最低价"只授予口径可比（含税）的行——
-    可比行在前按价格升序，不含税行在后按价格升序，永不取得最低价标记。"""
-    return sorted(offers, key=lambda offer: (not offer.get("tax_included"), offer["price"]))
+def _validity_state(offer, date):
+    """团购券有效期相对出发日期的状态（ISSUE-003；口径裁定：有效期＝可出行窗口）。"""
+    try:
+        covered = (dt.date.fromisoformat(offer["valid_from"]) <= date
+                   <= dt.date.fromisoformat(offer["valid_until"]))
+        return "covered" if covered else "not_covered"
+    except (KeyError, TypeError, ValueError):
+        return "unknown"  # 缺失/无法解析——无法确认覆盖，宁可不推荐
 
 
-def lowest_eligible(offers):
-    """可取得"◀ 最低价"并触发低价提醒的最低价（ISSUE-001：仅含税口径可比行参与）；
-    没有可比行时返回 None——宁可不给标记，不给假箭头。"""
-    eligible = [offer for offer in offers if offer.get("tax_included")]
+def eligible_for_lowest(offer, date):
+    """可竞争"◀ 最低价"的准入条件（PRD v1.1 AC1-R/AC6；AC7 随 ISSUE-004 加入）。"""
+    if not offer.get("tax_included"):
+        return False  # ISSUE-001：口径不可比（不含税）
+    if offer.get("is_deal") and _validity_state(offer, date) != "covered":
+        return False  # ISSUE-003：券有效期不覆盖（或无法确认覆盖）出发日期
+    return True
+
+
+def rank_offers(offers, date):
+    """展示排序：可竞争最低价的行在前按价格升序，其余（含被披露原因的行）在后。"""
+    return sorted(offers, key=lambda offer: (not eligible_for_lowest(offer, date), offer["price"]))
+
+
+def lowest_eligible(offers, date):
+    """可取得"◀ 最低价"并触发低价提醒的最低价；没有准入合格的行返回 None——
+    宁可不给标记，不给假箭头。"""
+    eligible = [offer for offer in offers if eligible_for_lowest(offer, date)]
     return min(eligible, key=lambda offer: offer["price"]) if eligible else None
 
 
-def search_note(offer):
-    """结果行备注：追加口径与可用性披露（ISSUE-001：不含税行必须显著披露"税费另计"）。"""
-    note = offer["note"]
+def search_note(offer, date):
+    """结果行备注：追加口径与可用性披露；"不覆盖"信息必须可见（PRD v1.1 AC6）。"""
+    note = offer.get("note", "")
     if not offer.get("tax_included"):
         note += "｜税费另计，到手价高于票面"
+    if offer.get("is_deal"):
+        state = _validity_state(offer, date)
+        if state == "not_covered":
+            note += f"｜有效期不覆盖 {date.isoformat()} 出发"
+        elif state == "unknown":
+            note += "｜有效期无法确认是否覆盖出发日期，请到购买页核对"
     return note
 
 
@@ -191,8 +215,8 @@ def cmd_search(args):
         print(f"可尝试已有航线，如：search --from SHA --to KIX --date {date.isoformat()}")
         return 0
 
-    offers = rank_offers(offers)
-    lowest = lowest_eligible(offers)
+    offers = rank_offers(offers, date)
+    lowest = lowest_eligible(offers, date)
     try:
         alert = find_alert(load_alerts(), origin, destination)
     except AlertsCorrupted:
@@ -202,7 +226,7 @@ def cmd_search(args):
     if lowest is None:
         print("本次结果中没有口径可比的最低价，原因见各行备注。")
     print_table(("价格", "票源", "航班/套餐", "含税", "备注"),
-                [(f"¥{o['price']}", o["source_name"], o["product"], tax_label(o), search_note(o))
+                [(f"¥{o['price']}", o["source_name"], o["product"], tax_label(o), search_note(o, date))
                  for o in offers], mark_index=offers.index(lowest) if lowest else None)
     return 0
 
@@ -289,7 +313,7 @@ def _watch_check(alerts):
             extra = f"（{'、'.join(failed)} 源不可用）" if failed else ""
             print(f"— {route}：暂无报价数据{extra}")
             continue
-        lowest = lowest_eligible(offers)
+        lowest = lowest_eligible(offers, date)
         if lowest is None:
             print(f"— {route}：无可比最低价（原因见各行备注），本次不计入提醒。")
         elif lowest["price"] <= a["threshold"]:
