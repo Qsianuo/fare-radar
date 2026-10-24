@@ -166,12 +166,8 @@ class AlertTest(unittest.TestCase):
             fr.save_alerts([self.ALERT], path)
             self.assertEqual(fr.load_alerts(path), [self.ALERT])
 
-    def test_load_missing_or_corrupted_returns_empty(self):
+    def test_load_missing_returns_empty(self):
         self.assertEqual(fr.load_alerts(Path(tempfile.gettempdir()) / "fare-radar-no-such.json"), [])
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "broken.json"
-            path.write_text("{oops", encoding="utf-8")
-            self.assertEqual(fr.load_alerts(path), [])
 
     def test_watch_check_hit(self):
         buf = io.StringIO()
@@ -185,6 +181,55 @@ class AlertTest(unittest.TestCase):
             fr._watch_check([{**self.ALERT, "origin": "SHA", "destination": "CTU", "threshold": 100}])
         self.assertNotIn("[低价提醒]", buf.getvalue())
         self.assertIn("未达底价", buf.getvalue())
+
+
+class AlertsCorruptionTest(unittest.TestCase):
+    """ISSUE-002 回归：alerts.json 损坏必须中文警告，且绝不以新清单覆盖原文件。"""
+
+    def setUp(self):
+        self._old_alerts_file = fr.ALERTS_FILE
+
+    def tearDown(self):
+        fr.ALERTS_FILE = self._old_alerts_file
+
+    @staticmethod
+    def _corrupt(path):
+        path.write_text("{oops broken", encoding="utf-8")
+        return path.read_text(encoding="utf-8")
+
+    def test_load_corrupted_warns_and_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alerts.json"
+            self._corrupt(path)
+            fr.ALERTS_FILE = path
+            buf = io.StringIO()
+            with redirect_stdout(buf), self.assertRaises(fr.AlertsCorrupted):
+                fr.load_alerts()
+            self.assertIn("已损坏", buf.getvalue())
+
+    def test_watch_check_warns_instead_of_showing_empty_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alerts.json"
+            self._corrupt(path)
+            fr.ALERTS_FILE = path
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = fr.main(["watch"])
+            self.assertEqual(code, 2)
+            self.assertIn("已损坏", buf.getvalue())
+            self.assertNotIn("暂无关注航线", buf.getvalue())
+
+    def test_set_refuses_and_keeps_corrupted_file_intact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alerts.json"
+            original = self._corrupt(path)
+            fr.ALERTS_FILE = path
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = fr.main(["watch", "--from", "SHA", "--to", "CTU", "--price", "500"])
+            self.assertEqual(code, 2)
+            self.assertNotIn("已保存关注", buf.getvalue())
+            self.assertEqual(path.read_text(encoding="utf-8"), original, "损坏文件必须原样保留")
 
 
 class ExitCodeTest(unittest.TestCase):

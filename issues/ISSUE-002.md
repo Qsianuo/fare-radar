@@ -55,7 +55,24 @@ $ python src/fareradar.py watch --from SHA --to CTU --price 500
 
 ## Reproduce（Dev 填）
 
+- 复现人: Dev | 日期: 2026-10-24 | 分支: fix/issue-001（356c7cc，问题自 v1.0 起存在）| 结果: **复现成功**
+- 按提交人步骤原样执行：设置关注 PEK ¥700 → `printf '{oops broken' > alerts.json` → 裸 `watch` 显示"暂无关注航线。"（无任何损坏警告，exit=0）→ `watch --from SHA --to CTU --price 500` 输出"已保存关注"（exit=0）→ 查看 `alerts.json` 仅剩 CTU 一条，PEK ¥700 永久丢失。与提交人证据完全一致。
+
+**根因分析**（定位到代码）：
+- `src/fareradar.py` 的 `load_alerts()` 在 `json.loads` 抛 `JSONDecodeError` 时走 `except (OSError, json.JSONDecodeError): return []`——把"文件损坏"与"文件不存在（从未设置过关注）"两种语义压缩成同一个空清单返回，且无任何输出。
+- 下游 `_watch_set()` 拿到 `[]` 后 `save_alerts(rest)` 用单条新数据整体覆写文件——**读失败被静默吞掉 + 写路径无条件覆盖**，两者叠加构成用户数据静默丢失。修复必须同时断掉两条腿：损坏要"叫出来"（警告+区分语义），写要"刹得住"（拒绝操作）。
+
 ## Fix（Dev 填）
+
+- 修复分支: `fix/issue-002`（基于 fix/issue-001 356c7cc）| 对应 PR: prs/PR-003.md | 方案类型: **警告 + 拒绝写入**（任务书允许"备份或拒绝"二选一，取拒绝写入——语义最简单、绝无误覆盖可能）
+- 核心改动（src/fareradar.py）:
+  1. 新增 `AlertsCorrupted` 异常与 `_warn_alerts_corrupted()`：损坏时输出"[警告] 关注文件 alerts.json 已损坏，无法读取，本次操作已取消（你的数据不会被覆盖）"+ 处理建议（备份/修复/删除），满足 AC9（含"文件已损坏"字样）；
+  2. `load_alerts()` 重写：文件缺失＝无关注（返回 []，不警告）；非法 JSON/读取失败/结构不对（非列表或元素非 dict，视同损坏）＝警告并抛 `AlertsCorrupted`——三种状态语义分离，堵死"静默吞掉读失败"；
+  3. `cmd_watch()` 捕获该异常立即返回退出码 2——**设置/删除/列表/裸检查在损坏状态下全部拒绝执行**，写路径天然到不了 `save_alerts()`，原损坏文件原样保留（AC10）；
+  4. `cmd_search()` 降级处理：关注文件损坏只影响提醒比对（跳过并已警告），搜索主流程照常。
+- alerts.json 位置与既有字段结构未动（任务书范围红线 3）；README 同步"损坏警告"行为与 watch 措辞（附带修订②）。
+- 补充测试（3 例，`AlertsCorruptionTest`）：损坏读取警告并抛异常；裸 watch 警告且不显示"暂无关注航线"、退出码 2；损坏状态下设置被拒且文件逐字节原样保留。原"损坏返回空"用例按新语义改写。
+- 自测: 28 例全绿；提交人复现步骤 1-5 重跑——第 3 步显示损坏警告（exit=2），第 4 步"已保存关注"不再出现（exit=2），第 5 步文件内容与损坏时逐字节一致。
 
 ## Code Review（总协调者填）
 
