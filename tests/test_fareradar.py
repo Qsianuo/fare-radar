@@ -48,7 +48,7 @@ class MergeAndSortTest(unittest.TestCase):
 
     def test_rank_offers_comparable_first_then_price(self):
         offers, _ = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 15))
-        offers = fr.rank_offers(offers)
+        offers = fr.rank_offers(offers, dt.date(2026, 11, 15))
         eligible = sorted(o["price"] for o in offers if o["tax_included"])
         ineligible = sorted(o["price"] for o in offers if not o["tax_included"])
         self.assertEqual([o["price"] for o in offers], eligible + ineligible)
@@ -70,10 +70,11 @@ class TaxComparabilityTest(unittest.TestCase):
 
     def test_lowest_eligible_ignores_non_tax_rows(self):
         offers = [{"price": 820, "tax_included": False}, {"price": 890, "tax_included": True}]
-        self.assertEqual(fr.lowest_eligible(offers)["price"], 890)
+        self.assertEqual(fr.lowest_eligible(offers, dt.date(2026, 11, 3))["price"], 890)
 
     def test_no_eligible_lowest_when_all_non_tax(self):
-        self.assertIsNone(fr.lowest_eligible([{"price": 820, "tax_included": False}]))
+        self.assertIsNone(fr.lowest_eligible([{"price": 820, "tax_included": False}],
+                                             dt.date(2026, 11, 3)))
 
     def test_search_discloses_tax_and_marks_comparable_lowest(self):
         buf = io.StringIO()
@@ -84,7 +85,8 @@ class TaxComparabilityTest(unittest.TestCase):
                         "不含税行必须含'税费另计'披露")
         markers = [i for i, ln in enumerate(lines) if "◀ 最低价" in ln]
         self.assertEqual(len(markers), 1)
-        self.assertIn("¥649", lines[markers[0] - 1], "标记必须落在含税最低行")
+        self.assertIn("¥890", lines[markers[0] - 1],
+                      "标记落在含税可比行（¥649 券因有效期不覆盖退出竞争，见 ISSUE-003）")
 
     def test_kix_case_marker_on_comparable_row(self):
         # ISSUE-005 并入回归：SHA→KIX 2026-12-20，¥1009 不含税不得标最低价
@@ -95,6 +97,46 @@ class TaxComparabilityTest(unittest.TestCase):
         marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
         self.assertIn("¥1099", lines[marker - 1], "标记应落在含税团购行而非不含税行")
         self.assertTrue(any("9C8999" in ln and "税费另计" in ln for ln in lines))
+
+
+class ValidityEligibilityTest(unittest.TestCase):
+    """ISSUE-003 回归：券有效期＝可出行窗口，不覆盖出发日期不得标最低价、不得催"出手"。"""
+
+    def test_not_covered_deal_excluded_and_no_alert(self):
+        # 提交人复现场景：SHA→PEK 2026-11-03，DY-002 有效期 11-05 起，底价 700
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alerts.json"
+            fr.save_alerts([{"origin": "SHA", "destination": "PEK", "threshold": 700,
+                             "created_at": "2026-10-24"}], path)
+            old = fr.ALERTS_FILE
+            fr.ALERTS_FILE = path
+            try:
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    fr.main(["search", "--from", "SHA", "--to", "PEK", "--date", "2026-11-03"])
+            finally:
+                fr.ALERTS_FILE = old
+        out = buf.getvalue()
+        self.assertNotIn("可以出手了", out, "用不上的券不得触发行动建议")
+        self.assertTrue(any("有效期不覆盖" in ln and "7日有效券" in ln
+                            for ln in out.splitlines()), "不覆盖信息必须可见")
+        lines = out.splitlines()
+        marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
+        self.assertIn("¥890", lines[marker - 1], "最低价落到含税航司行")
+
+    def test_covered_deal_still_lowest(self):
+        # 回归：有效期覆盖出发日期的券行为不变（DY-005 覆盖 2026-11-20）
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fr.main(["search", "--from", "SHA", "--to", "CTU", "--date", "2026-11-20"])
+        lines = buf.getvalue().splitlines()
+        marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
+        self.assertIn("¥459", lines[marker - 1])
+
+    def test_unknown_validity_treated_as_not_covered(self):
+        offer = {"price": 100, "tax_included": True, "is_deal": True}  # 缺有效期字段
+        self.assertFalse(fr.eligible_for_lowest(offer, dt.date(2026, 11, 20)))
+        self.assertIn("有效期无法确认", fr.search_note(offer, dt.date(2026, 11, 20)))
 
 
 class SourceFailureTest(unittest.TestCase):
