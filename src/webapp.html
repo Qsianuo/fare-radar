@@ -130,10 +130,10 @@ const el = (tag, cls, text) => {
   if (text != null) n.textContent = text;
   return n;
 };
-async function api(path, params = {}) {
+async function api(path, params = {}, method = "GET") {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== "" && v != null));
-  const res = await fetch(path + (qs.toString() ? "?" + qs : ""));
+  const res = await fetch(path + (qs.toString() ? "?" + qs : ""), { method });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || "请求失败");
   return data;
@@ -243,7 +243,7 @@ function renderWatchList(data) {
     const btn = el("button", "plain", "删除");
     btn.addEventListener("click", async () => {
       try {
-        const r = await api("/api/watch/remove", { from: a.origin, to: a.destination });
+        const r = await api("/api/watch/remove", { from: a.origin, to: a.destination }, "POST");
         notice($("watch-status"), "muted", r.message);
         loadWatchList();
       } catch (err) { notice($("watch-status"), "bad", err.message); }
@@ -265,7 +265,7 @@ $("watch-form").addEventListener("submit", async (e) => {
   box.innerHTML = "";
   try {
     const r = await api("/api/watch/set", {
-      from: $("watch-from").value, to: $("watch-to").value, price: $("watch-price").value });
+      from: $("watch-from").value, to: $("watch-to").value, price: $("watch-price").value }, "POST");
     notice(box, "good", r.message + " 每次比价或立即检查时自动比对（模拟数据）。");
     loadWatchList();
   } catch (err) { notice(box, "bad", err.message); }
