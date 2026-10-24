@@ -99,6 +99,28 @@ class TaxComparabilityTest(unittest.TestCase):
         self.assertTrue(any("9C8999" in ln and "税费另计" in ln for ln in lines))
 
 
+class SoldOutEligibilityTest(unittest.TestCase):
+    """ISSUE-004 回归：售罄券不参与"◀ 最低价"竞争，展示必含"已售罄"。"""
+
+    def test_sold_out_deal_not_marked_and_disclosed(self):
+        # 提交人复现场景：PEK→SHA 2026-11-10（DY-004 售罄；MU5102 不含税）
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fr.main(["search", "--from", "PEK", "--to", "SHA", "--date", "2026-11-10"])
+        out = buf.getvalue()
+        self.assertNotIn("◀ 最低价", out, "售罄券与不含税行均不得取得标记")
+        self.assertIn("已售罄", out)
+        self.assertIn("税费另计", out)
+        self.assertIn("没有口径可比的最低价", out)
+
+    def test_sold_out_check_in_eligibility(self):
+        offer = {"price": 599, "tax_included": True, "is_deal": True, "stock": "售罄",
+                 "valid_from": "2026-11-01", "valid_until": "2026-11-15"}
+        self.assertFalse(fr.eligible_for_lowest(offer, dt.date(2026, 11, 10)))
+        offer["stock"] = "充足"
+        self.assertTrue(fr.eligible_for_lowest(offer, dt.date(2026, 11, 10)))
+
+
 class ValidityEligibilityTest(unittest.TestCase):
     """ISSUE-003 回归：券有效期＝可出行窗口，不覆盖出发日期不得标最低价、不得催"出手"。"""
 

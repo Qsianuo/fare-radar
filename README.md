@@ -69,7 +69,7 @@ python src/fareradar.py watch        # 立即检查全部关注航线
 
 | 命令 | 作用 | 常用参数 |
 |---|---|---|
-| `search --from A --to B --date D` | 多票源比价：口径可比（含税）价升序 + `◀ 最低价` 标记；不含税行标注"税费另计"、券有效期不覆盖出发日期的不参与竞争（行内标注） | `--source simulated_airline/douyin_groupbuy` 只查一个票源 |
+| `search --from A --to B --date D` | 多票源比价：口径可比（含税）价升序 + `◀ 最低价` 标记；不含税行标注"税费另计"，券有效期不覆盖出发日期或已售罄的不参与竞争（行内标注） | `--source simulated_airline/douyin_groupbuy` 只查一个票源 |
 | `deals [--from A] [--to B]` | 团购专区：价格/航线/有效期/库存/退改规则/下单提示 | 过滤参数可省略 |
 | `watch --from A --to B --price N` | 设置/更新某航线底价（存于仓库根 `alerts.json`） | |
 | `watch` | 立即检查全部关注航线（按明天出发的模拟最低价） | |

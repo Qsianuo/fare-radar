@@ -69,6 +69,7 @@ class DouyinGroupbuySource(Source):
             "price": deal["price"],
             "tax_included": deal["tax_included"],
             "is_deal": True,
+            "stock": deal.get("stock"),
             "valid_from": deal.get("valid_from"),
             "valid_until": deal.get("valid_until"),
             "note": ("团购 ▶ 需抖音App下单｜"
