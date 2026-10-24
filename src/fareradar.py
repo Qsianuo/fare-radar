@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ALERTS_FILE = ROOT / "alerts.json"
 LINE = "-" * 64
 DISCLOSE = "未披露，下单前请在购买页确认"
+REFUND_DISCLOSE = ("商家未公布退改规则，此类券风险最高；"
+                   "下单前务必在抖音购买页核对退改条款，并截图留证")
 SIM_NOTICE = "[模拟数据] 以下价格来自内置模拟票源，非真实报价，不能用于实际购票。"
 DEALS_NOTICE = "[模拟数据] 以下团购套餐来自模拟数据源，非真实商品，不能直接购买。"
 CITY = {"SHA": "上海", "PEK": "北京", "CTU": "成都", "KIX": "大阪关西", "CAN": "广州"}
@@ -142,6 +144,8 @@ def search_note(offer, date):
     if offer.get("is_deal"):
         if offer.get("stock") == "售罄":
             note += "｜已售罄，暂时抢不到"
+        if not offer.get("refund_disclosed", True):
+            note += "｜退改不明"  # AC8：退改规则缺失的券必须带标记，不能只标最低价
         state = _validity_state(offer, date)
         if state == "not_covered":
             note += f"｜有效期不覆盖 {date.isoformat()} 出发"
@@ -241,7 +245,7 @@ def _deal_card(deal):
         f"│ 航线：{city(deal['origin'])} → {city(deal['destination'])}",
         f"│ 价格：¥{deal['price']}（{tax_label(deal)}）｜库存：{disclose(deal.get('stock'), '未披露')}",
         f"│ 有效期：{disclose(deal.get('valid_from'), '未披露')} ~ {disclose(deal.get('valid_until'), '未披露')}",
-        f"│ 退改规则：{disclose(deal.get('refund_change_rules'))}",
+        f"│ 退改规则：{disclose(deal.get('refund_change_rules'), REFUND_DISCLOSE)}",
         f"│ 下单方式：{disclose(deal.get('purchase_entry'))}",
     ] + ([f"│ 限制条件：{deal['note']}"] if deal.get("note") else []) + [
         f"└ 更新时间：{disclose(deal.get('updated_at'), '未披露')}",
