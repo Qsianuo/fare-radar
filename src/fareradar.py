@@ -122,13 +122,30 @@ def search_note(offer):
     return note
 
 
-def load_alerts(path=ALERTS_FILE):
-    """读取关注清单；文件缺失/损坏按"无关注"处理，不阻断查询。"""
+class AlertsCorrupted(Exception):
+    """alerts.json 存在但无法解析或结构不对：拒绝操作以保护用户数据（PRD v1.1 AC9/AC10）。"""
+
+
+def _warn_alerts_corrupted(path):
+    print(f"[警告] 关注文件 {path.name} 已损坏，无法读取，本次操作已取消（你的数据不会被覆盖）。")
+    print(f"请先用文本编辑器备份并修复 {path.name}；确认不再需要后也可删除它，再重新设置关注。")
+
+
+def load_alerts(path=None):
+    """读取关注清单。文件缺失＝无关注（返回 []）；文件损坏或结构不对＝打印警告并抛
+    AlertsCorrupted——宁可拒绝服务，不静默覆盖用户数据（ISSUE-002）。"""
+    path = ALERTS_FILE if path is None else path
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return []
-    return [a for a in data if isinstance(a, dict)] if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        _warn_alerts_corrupted(path)
+        raise AlertsCorrupted from None
+    if not isinstance(data, list) or not all(isinstance(a, dict) for a in data):
+        _warn_alerts_corrupted(path)  # 能解析但不是"关注清单"的结构，视同损坏
+        raise AlertsCorrupted from None
+    return data
 
 
 def save_alerts(alerts, path=ALERTS_FILE):
@@ -176,7 +193,10 @@ def cmd_search(args):
 
     offers = rank_offers(offers)
     lowest = lowest_eligible(offers)
-    alert = find_alert(load_alerts(), origin, destination)
+    try:
+        alert = find_alert(load_alerts(), origin, destination)
+    except AlertsCorrupted:
+        alert = None  # 警告已打印；关注文件损坏不阻断搜索主流程，本次仅跳过提醒比对
     if alert and lowest and lowest["price"] <= alert["threshold"]:
         print(f"[低价提醒] 当前最低 ¥{lowest['price']} ≤ 你的底价 ¥{alert['threshold']}，可以出手了！")
     if lowest is None:
@@ -283,7 +303,10 @@ def _watch_check(alerts):
 
 
 def cmd_watch(args):
-    alerts = load_alerts()
+    try:
+        alerts = load_alerts()
+    except AlertsCorrupted:
+        return 2  # 警告已打印；损坏状态下拒绝一切读/写操作，保护原文件不被覆盖
     if args.list:
         if not alerts:
             print(f"暂无关注航线。{WATCH_USAGE}")

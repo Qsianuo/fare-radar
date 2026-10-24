@@ -53,7 +53,7 @@ python src/fareradar.py deals --from SHA --to CTU
 ```
 
 ```bash
-# 第 4 步（可选）：设个心理底价，等降价提醒
+# 第 4 步（可选）：设个心理底价，每次运行时检查一次降价
 python src/fareradar.py watch --from SHA --to PEK --price 700
 python src/fareradar.py watch        # 立即检查全部关注航线
 ```
@@ -89,5 +89,5 @@ python src/fareradar.py watch        # 立即检查全部关注航线
 
 - 全部数据为内置模拟数据，无真实票价；不接入任何网络。
 - 不能购票、支付或跳转下单；团购券的交易与售后都发生在抖音 App 内。
-- `watch` 只在"查询时判断"，无后台轮询与系统推送；删除 `alerts.json` 即清空全部关注。
+- `watch` 只在"查询时判断"，无后台轮询与系统推送；删除 `alerts.json` 即清空全部关注。关注文件损坏时工具会警告并拒绝操作（不会静默覆盖你的数据），需手工修复或删除后重新设置。
 - 暂不支持往返、多航段、舱位/时段筛选与 `--json` 机读输出。
