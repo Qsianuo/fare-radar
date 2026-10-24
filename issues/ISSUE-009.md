@@ -65,6 +65,23 @@
 
 ## Test（Tester 填）
 
+- 回归人: Tester | 日期: 2026-10-25 | 环境: main @ 914def4（v1.3.0）| 方式: API 黑盒（`python src/webapp.py --port 8082`，curl/urllib 实测）| 结论: **逐点通过，未发现新问题**
+- **既有能力（含回归）**：
+  - search（SHA→CTU 2026-11-20）：HTTP 200，8 行报价，5 票源全部出现（航司直连/OTA 比价/抖音团购/抖音小程序·春秋航空/抖音直播间）；`notice="[演示数据]…含分钟级演示波动…"`；`is_lowest` 恰 1 个；行内票源名/描述/备注**零"模拟"字样**；排序符合准入口径——前排可竞争行升序 [474,493,814,871,996]，后排披露行升序 [745(有效期不覆盖),811(税费另计),858(税费另计)]，`is_lowest`＝前排最低 474（该行带"退改不明"，与 v1.1 规则一致：退改不明不挡准入）。
+  - 错误路径全 400＋中文：同出发到达、`2026/11/01`、过去日期 `2026-10-01`、未知票源（提示列出 5 个新 id）、缺参数；`XXX→CTU` 返回 200＋`empty_hint="城市码 XXX 不在已支持的 25 城清单中…"`（兜底不编造）。
+  - deals：9 张卡，卡面票源含"抖音团购"与"抖音直播间"两类；DY-005 退改为用户话术、DY-004 仍"售罄"（资产未消灭）；黑话（字段缺失/数据不完整/模拟源）零命中；无匹配航线 0 张卡不报错。
+  - watch：set/list/check/remove 全通；price=0/abc、缺 to → 400；**GET /api/watch/set → 404**（变更不可经 GET 触发，v1.2.1 修复未回退）；alerts.json 损坏时 GET list 与 POST set 均 **409**＋"收藏文件…已损坏，操作已取消（你的数据未被改动）"，文件 md5 前后一致。
+- **新能力**：
+  - `/api/cities`：count=25，25 项码＋中文名与 PRD 第 4 节清单一一对应；`/api/sources`：5 项 id/名/描述与契约一致。
+  - 任意航线抽样 5 条（2026-11-20）全部有报价且口径正确：HRB→SYX（3421km，6 行 4 源）、KMG→HKG、PEK→BKK、SHE→KIX、TSN→NKG；各路线前排升序、is_lowest＝前排最低；"远贵近廉"成立（HRB→SYX ¥1425 vs TSN→NKG ¥542）。
+  - 演示波动确定性：同一分钟内两次请求价格序列**完全一致**（02:16:49/02:16:52，8 对价格相同）；跨分钟（02:16→02:17）可见变化（495→498、811→808、867→863）；**同一分钟 CLI 与 API 最低价一致**（475＝475，AC4）。
+  - `/api/trend`（SHA→CTU 2026-11-20）：points 恰 24 个、hours_ago 23→0、时间升序；current=475 落在 day_low=443~day_high=475 内（含端点）；notice="演示波动：近 24 小时价格为确定性生成的重放，非真实报价。"；全响应无"实时/秒级/行情"。错误路径：缺参数/非法日期 → 400；未知端点 → 404。
+  - 收藏空底价：POST set 不带 price → "已收藏航线：哈尔滨(HRB) → 三亚(SYX)（未设底价）。"，list 中 `threshold=null`（未按 0 处理）、`current_lowest=1251`、`below_threshold=false`；底价 100（＜现价）→ below=false、底价 9999（＞现价 721）→ below=true，语义正确；check 输出 wait/hit 状态正确。
+  - CLI/网页双向同步（AC5）：API 收藏 → CLI `watch --list` 可见；CLI 设底价 → API list 可见（含 current_lowest/below_threshold）；API 收藏 KMG→HKG → CLI 删除 → API list 确认为空。
+  - CLI 兼容：首行声明统一"[演示数据]…"；`--source airline` 可用，旧 id `simulated_airline` 以退出码 2 拒绝，未知票源提示列出 5 个新 id。
+- **单测**：`python -m unittest discover tests` → **Ran 60 tests, OK**。
+- **观察（不构成新问题）**：①部分抽样路线为 3~4 票源（非每次 5 源全出）——直播间场次按天轮换、团购精选券限定航线，为交接文档记录的设计行为，AC3 的"全部票源"在 SHA→CTU 主航线满足；②POST 参数按契约走 URL 查询串（表单体不被解析，返回 400"需同时提供出发与到达"）——与前端 `api()` 封装一致，建议契约文档下次明示"参数一律 query string"；③测试中手工恢复 alerts.json 造成的一次"CLI 删除未找到"为测试状态原因，复验后双向删除同步正常。
+
 ## User Acceptance（User 填）
 
 - 待产品评审人逐点复核。
