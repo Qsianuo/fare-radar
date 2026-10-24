@@ -16,12 +16,7 @@
 我做了什么：打开 README"3 分钟上手"，把示例原样复制到 Git Bash 里跑。
 
 ```
-python src/fareradar.py search --from SHA --to CTU --date 2026-11-15
-```
-
-真实输出（摘录）：
-
-```
+$ python src/fareradar.py search --from SHA --to CTU --date 2026-11-15
 航线：上海(SHA) → 成都(CTU)   日期：2026-11-15（周日）
 ¥459  抖音团购源(模拟)  川航联营 上海-成都 双城券     含税    团购 ▶ 需抖音App下单｜有效期 2026-11-15~2026-12-10
       ◀ 最低价
@@ -37,12 +32,7 @@ python src/fareradar.py search --from SHA --to CTU --date 2026-11-15
 我做了什么：明年想去大阪，我不知道大阪的三字码，凭直觉猜了 OSA（大阪拼音缩写）。
 
 ```
-python src/fareradar.py search --from SHA --to OSA --date 2026-12-20
-```
-
-真实输出：
-
-```
+$ python src/fareradar.py search --from SHA --to OSA --date 2026-12-20
 该航线暂无可用报价（已接入票源：模拟航司源、抖音团购源(模拟)）。
 可尝试已有航线，如：search --from SHA --to KIX --date 2026-12-20
 ```
@@ -62,10 +52,10 @@ python src/fareradar.py search --from SHA --to OSA --date 2026-12-20
 我做了什么：按 README 第 3 步查团购专区，先看成都，再不带参数把 5 张券全逛了一遍。
 
 ```
-python src/fareradar.py deals --from SHA --to CTU
+$ python src/fareradar.py deals --from SHA --to CTU
 ```
 
-真实输出（摘录，成都最低那张 ¥459）：
+（摘录，成都最低那张 ¥459）
 
 ```
 ┌ 套餐：川航联营 上海-成都 双城券 [DY-005]
@@ -82,7 +72,7 @@ python src/fareradar.py deals --from SHA --to CTU
 **揪到一个大坑**：逛全量列表时看到京沪券 DY-004"库存：售罄"，我灵机一动反查搜索：
 
 ```
-python src/fareradar.py search --from PEK --to SHA --date 2026-11-10
+$ python src/fareradar.py search --from PEK --to SHA --date 2026-11-10
 ¥599  抖音团购源(模拟)  京沪快线 15日有效券  含税    团购 ▶ 需抖音App下单｜有效期 2026-11-01~2026-11-15
       ◀ 最低价
 ```
@@ -94,13 +84,8 @@ python src/fareradar.py search --from PEK --to SHA --date 2026-11-10
 我做了什么：今天最低 ¥459，我怕它涨，把心理底价设成 ¥500，然后立刻检查了一遍。
 
 ```
-python src/fareradar.py watch --from SHA --to CTU --price 500
-python src/fareradar.py watch
-```
-
-真实输出：
-
-```
+$ python src/fareradar.py watch --from SHA --to CTU --price 500
+$ python src/fareradar.py watch
 已保存关注：上海(SHA) → 成都(CTU)，底价 ¥500。
 [低价提醒] SHA → CTU 当前最低 ¥459 ≤ 底价 ¥500，可以出手了！
 共 1 条航线命中底价。
@@ -115,6 +100,7 @@ python src/fareradar.py watch
 把日期敲成 `--date 11-15`：
 
 ```
+$ python src/fareradar.py search --from SHA --to CTU --date 11-15
 参数错误：--date 需为 YYYY-MM-DD 格式（如 2026-11-15），收到：11-15
 用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
 ```
