@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>低价票雷达 FareRadar</title>
+<style>
+:root{--blue:#2563eb;--blue-soft:#eff6ff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--bg:#f5f7fa;--deal:#b45309;--deal-soft:#fef3c7;--good:#15803d;--good-soft:#dcfce7;--bad:#b91c1c;--bad-soft:#fee2e2;--warn:#92400e;--warn-soft:#fef3c7}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+header{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:22px 0 0}
+header .brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:22px}.en{font-weight:400;opacity:.85;font-size:15px;margin-left:2px}
+.badge{font-size:12px;padding:3px 10px;border-radius:999px;background:#fbbf24;color:#7c2d12;font-weight:600}
+nav{display:flex;gap:4px;margin-top:16px}
+.tab{border:none;background:rgba(255,255,255,.14);color:#fff;padding:10px 18px;border-radius:9px 9px 0 0;cursor:pointer;font-size:14px}
+.tab.active{background:var(--bg);color:var(--ink);font-weight:600}
+main{padding:20px 16px 48px}
+.panel{display:none}.panel.active{display:block}
+.toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.toolbar label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.toolbar input,.toolbar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;min-width:96px;background:#fff;color:var(--ink)}
+.toolbar input#date{min-width:150px}
+button.primary{background:var(--blue);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:14px;cursor:pointer}
+button.primary:hover{background:#1d4ed8}
+button.plain{background:#fff;color:var(--ink);border:1px solid var(--line);padding:9px 14px;border-radius:8px;font-size:14px;cursor:pointer}
+button.plain:hover{border-color:var(--blue);color:var(--blue)}
+.notice{padding:10px 14px;border-radius:9px;margin:8px 0;font-size:14px;line-height:1.5}
+.notice.good{background:var(--good-soft);color:var(--good)}
+.notice.bad{background:var(--bad-soft);color:var(--bad)}
+.notice.warn{background:var(--warn-soft);color:var(--warn)}
+.notice.muted{background:#eef2f7;color:var(--muted)}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:11px 12px;text-align:left;font-size:14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#f8fafc;font-size:13px;color:var(--muted);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.lowest td{background:var(--blue-soft)}
+.price{font-weight:700;color:var(--blue);white-space:nowrap}
+tr.lowest .price{font-size:16px}
+.mark{display:inline-block;background:var(--blue);color:#fff;font-size:12px;border-radius:5px;padding:1px 7px;margin-left:8px;white-space:nowrap}
+.pill{display:inline-block;background:var(--deal-soft);color:var(--deal);font-size:12px;border-radius:999px;padding:1px 8px;margin-left:8px;white-space:nowrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h3{margin:0;font-size:15px;line-height:1.4}
+.card .big{font-size:24px;font-weight:800;color:var(--deal);margin-top:8px}
+.card .big small{font-size:12px;font-weight:400;color:var(--muted)}
+.card dl{margin:12px 0 0}
+.card dt{float:left;clear:left;width:64px;color:var(--muted);font-size:13px;padding:3px 0}
+.card dd{margin:0 0 0 70px;font-size:13px;padding:3px 0;line-height:1.5}
+.line-item{background:#fff;border:1px solid var(--line);border-left:4px solid var(--line);border-radius:9px;padding:11px 14px;margin:8px 0;font-size:14px}
+.line-item .route{font-weight:600;margin-right:8px}
+.line-item.hit{border-left-color:#22c55e;background:#f0fdf4}
+.line-item.wait{border-left-color:#cbd5e1;color:var(--muted)}
+.line-item.none{border-left-color:#f59e0b;background:#fffbeb}
+.empty{color:var(--muted);background:#fff;border:1px dashed var(--line);padding:16px;border-radius:12px;text-align:center}
+footer{color:var(--muted);font-size:12px;padding:18px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap brand">
+    <h1>✈️ 低价票雷达<span class="en">FareRadar</span></h1>
+    <span class="badge">模拟数据 · 不能用于实际购票</span>
+  </div>
+  <nav class="wrap">
+    <button class="tab active" data-tab="search">🔍 搜索比价</button>
+    <button class="tab" data-tab="deals">🎫 团购专区</button>
+    <button class="tab" data-tab="watch">🔔 低价提醒</button>
+  </nav>
+</header>
+<main class="wrap">
+  <section id="tab-search" class="panel active">
+    <form id="search-form" class="toolbar">
+      <label>出发<input id="from" list="cities" value="SHA" maxlength="3" placeholder="如 SHA"></label>
+      <label>到达<input id="to" list="cities" value="CTU" maxlength="3" placeholder="如 CTU"></label>
+      <label>出发日期<input id="date" type="date"></label>
+      <label>票源
+        <select id="source">
+          <option value="">全部票源</option>
+          <option value="simulated_airline">模拟航司源</option>
+          <option value="douyin_groupbuy">抖音团购源（模拟）</option>
+        </select>
+      </label>
+      <button type="submit" class="primary">搜索</button>
+    </form>
+    <div id="search-status"></div>
+    <div id="search-result"></div>
+  </section>
+
+  <section id="tab-deals" class="panel">
+    <form id="deals-form" class="toolbar">
+      <label>出发（可留空）<input id="deal-from" list="cities" maxlength="3" placeholder="全部"></label>
+      <label>到达（可留空）<input id="deal-to" list="cities" maxlength="3" placeholder="全部"></label>
+      <button type="submit" class="primary">查看团购</button>
+    </form>
+    <div id="deals-status"></div>
+    <div id="deals-result" class="cards"></div>
+  </section>
+
+  <section id="tab-watch" class="panel">
+    <form id="watch-form" class="toolbar">
+      <label>出发<input id="watch-from" list="cities" value="SHA" maxlength="3"></label>
+      <label>到达<input id="watch-to" list="cities" value="PEK" maxlength="3"></label>
+      <label>心理底价（元）<input id="watch-price" type="number" min="1" value="800"></label>
+      <button type="submit" class="primary">设底价</button>
+      <button type="button" id="watch-check" class="plain">立即检查</button>
+    </form>
+    <div id="watch-status"></div>
+    <div id="watch-list"></div>
+    <div id="watch-result"></div>
+  </section>
+</main>
+<footer>FareRadar v1.2.0（教学项目）· 数据来自内置模拟票源，购买始终发生在航司官网或抖音 App 内 · 与命令行版共用同一套比价规则</footer>
+
+<datalist id="cities">
+  <option value="SHA">上海</option>
+  <option value="PEK">北京</option>
+  <option value="CTU">成都</option>
+  <option value="KIX">大阪关西</option>
+  <option value="CAN">广州</option>
+</datalist>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+async function api(path, params = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== "" && v != null));
+  const res = await fetch(path + (qs.toString() ? "?" + qs : ""));
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+function notice(node, kind, text) {
+  if (!text) return;
+  node.append(el("div", "notice " + kind, text));
+}
+function localDate(offsetDays = 7) {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  const p = (x) => String(x).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+/* ---- 页签 ---- */
+document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll(".panel").forEach(p =>
+    p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
+  if (btn.dataset.tab === "deals") $("deals-form").requestSubmit();
+  if (btn.dataset.tab === "watch") { loadWatchList(); }
+}));
+
+/* ---- 搜索比价 ---- */
+function renderSearch(data) {
+  const out = $("search-result");
+  out.innerHTML = "";
+  if (!data.offers.length) { out.append(el("p", "empty", data.empty_hint)); return; }
+  const t = el("table");
+  const head = el("tr");
+  ["价格", "票源", "航班 / 套餐", "口径", "备注"].forEach(h => head.append(el("th", null, h)));
+  t.append(head);
+  data.offers.forEach(o => {
+    const tr = el("tr", o.is_lowest ? "lowest" : "");
+    const price = el("td", "price", "¥" + o.price);
+    if (o.is_lowest) price.append(el("span", "mark", "◀ 最低价"));
+    const src = el("td", null, o.source_name);
+    if (o.is_deal) src.append(el("span", "pill", "团购"));
+    tr.append(price, src, el("td", null, o.product), el("td", null, o.tax_label),
+      el("td", null, o.note));
+    t.append(tr);
+  });
+  out.append(t);
+}
+$("search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const box = $("search-status"), out = $("search-result");
+  box.innerHTML = ""; out.innerHTML = "";
+  box.append(el("div", "notice muted", "查询中…"));
+  try {
+    const data = await api("/api/search", {
+      from: $("from").value, to: $("to").value,
+      date: $("date").value, source: $("source").value });
+    box.innerHTML = "";
+    notice(box, "muted", `查询 ${data.route} · ${data.date}（${data.weekday}）`);
+    if (data.alert_hit) notice(box, "good", "🔔 [低价提醒] " + data.alert_hit);
+    if (data.warning) notice(box, "bad", data.warning);
+    data.failed.forEach(n => notice(box, "warn", `票源「${n}」暂不可用，已跳过（不影响其他票源）。`));
+    renderSearch(data);
+  } catch (err) { box.innerHTML = ""; notice(box, "bad", err.message); }
+});
+
+/* ---- 团购专区 ---- */
+function renderDeals(data) {
+  const out = $("deals-result");
+  out.innerHTML = "";
+  if (!data.deals.length) { out.append(el("p", "empty", "当前航线暂无团购套餐，可清空过滤查看全部。")); return; }
+  data.deals.forEach(d => {
+    const c = el("div", "card");
+    const h = el("h3", null, d.name + " ");
+    h.append(el("span", "pill", d.deal_id));
+    const big = el("div", "big", "¥" + d.price);
+    big.append(el("small", null, ` / ${d.tax_label}｜库存 ${d.stock}`));
+    const dl = el("dl");
+    [["航线", d.route_text], ["有效期", d.validity], ["退改规则", d.refund],
+     ["下单方式", d.purchase], ["限制条件", d.note], ["更新时间", d.updated]]
+      .forEach(([k, v]) => { dl.append(el("dt", null, k), el("dd", null, v)); });
+    c.append(h, big, dl);
+    out.append(c);
+  });
+}
+$("deals-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const box = $("deals-status"), out = $("deals-result");
+  box.innerHTML = ""; out.innerHTML = "";
+  try {
+    const data = await api("/api/deals", { from: $("deal-from").value, to: $("deal-to").value });
+    notice(box, "muted", `[模拟数据] 以下团购套餐来自模拟数据源，非真实商品，不能直接购买。`);
+    renderDeals(data);
+  } catch (err) { notice(box, "bad", err.message); }
+});
+
+/* ---- 低价提醒 ---- */
+function renderWatchList(data) {
+  const out = $("watch-list");
+  out.innerHTML = "";
+  if (!data.alerts.length) { out.append(el("p", "empty", "暂无关注航线。设置底价后，每次比价都会自动帮你盯着。")); return; }
+  const t = el("table");
+  const head = el("tr");
+  ["航线", "底价", "设置时间", ""].forEach(h => head.append(el("th", null, h)));
+  t.append(head);
+  data.alerts.forEach(a => {
+    const tr = el("tr");
+    tr.append(el("td", null, `${a.origin} → ${a.destination}`),
+      el("td", "price", "¥" + a.threshold), el("td", null, a.created_at));
+    const td = el("td");
+    const btn = el("button", "plain", "删除");
+    btn.addEventListener("click", async () => {
+      try {
+        const r = await api("/api/watch/remove", { from: a.origin, to: a.destination });
+        notice($("watch-status"), "muted", r.message);
+        loadWatchList();
+      } catch (err) { notice($("watch-status"), "bad", err.message); }
+    });
+    td.append(btn); tr.append(td); t.append(tr);
+  });
+  out.append(t);
+}
+async function loadWatchList() {
+  const box = $("watch-status"), out = $("watch-list");
+  try {
+    const data = await api("/api/watch/list");
+    box.innerHTML = ""; renderWatchList(data);
+  } catch (err) { out.innerHTML = ""; notice(box, "bad", err.message); }
+}
+$("watch-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const box = $("watch-status");
+  box.innerHTML = "";
+  try {
+    const r = await api("/api/watch/set", {
+      from: $("watch-from").value, to: $("watch-to").value, price: $("watch-price").value });
+    notice(box, "good", r.message + " 每次比价或立即检查时自动比对（模拟数据）。");
+    loadWatchList();
+  } catch (err) { notice(box, "bad", err.message); }
+});
+$("watch-check").addEventListener("click", async () => {
+  const box = $("watch-status"), out = $("watch-result");
+  box.innerHTML = ""; out.innerHTML = "";
+  try {
+    const data = await api("/api/watch/check");
+    notice(box, "muted", `${data.notice} 按 ${data.date}（明天）出发的模拟最低价判断：`);
+    data.lines.forEach(l => {
+      const item = el("div", "line-item " + l.status);
+      item.append(el("span", "route", l.route), document.createTextNode(l.text));
+      out.append(item);
+    });
+  } catch (err) { notice(box, "bad", err.message); }
+});
+
+/* ---- 初始状态 ---- */
+$("date").value = localDate(7);
+$("search-form").requestSubmit();
+</script>
+</body>
+</html>
