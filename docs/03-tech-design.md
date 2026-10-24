@@ -1,0 +1,94 @@
+# 低价票雷达 FareRadar —— 技术方案 v1.0
+
+| 项 | 内容 |
+|---|---|
+| 作者 | Dev |
+| 日期 | 2026-10-24 |
+| 依据 | 02-PRD-v1.0.md、handoff-pm-to-dev.md、04-douyin-groupbuy-research.md |
+| 硬约束 | 仅 Python 3.10 标准库；总代码量 ≤500 行；单机 CLI，零网络请求 |
+
+## 1. 总体架构
+
+三层结构，依赖单向向下，CLI 层不认识任何具体票源：
+
+```
+src/fareradar.py          CLI 层：参数解析/校验、合并排序、格式化输出、提醒判断、alerts.json 读写
+src/sources/__init__.py   注册表：all_sources() / source_by_id()（可插拔的唯一改动点）
+src/sources/base.py       统一 Source 抽象（接口契约）
+src/sources/simulated_airline.py   模拟航司源（比价行）
+src/sources/douyin_groupbuy.py     模拟抖音团购源（团购卡 + 比价行）
+```
+
+入口形态：单文件 `python src/fareradar.py <命令>`。脚本运行时 Python 自动将 `src/`
+置于 `sys.path[0]`，故 `import sources` 零配置可用；不提供 `-m` 入口（见 Q1）。
+
+## 2. 票源适配器接口（统一 Source 抽象）
+
+```python
+class Source:                      # base.py
+    source_id = ""                 # 机器名，用于 --source 过滤，如 "douyin_groupbuy"
+    display_name = ""              # 展示名，如 "抖音团购源(模拟)"
+    def search(self, origin, destination, date) -> list[dict]   # 比价行
+    def deals(self, origin=None, destination=None) -> list[dict] # 团购卡，非团购源返回 []
+```
+
+- **比价行**（search 返回）统一字段：`source_id / source_name / product / price /
+  tax_included / is_deal / note`。航司行 product=航班号；团购行 product=套餐名，
+  note 含"团购 ▶ 需抖音App下单"，满足 PRD AC3。
+- **团购卡**（deals 返回）严格执行 04 文档字段契约：`deal_id / source_name / route /
+  price+currency+含税口径 / valid_from / valid_until / stock / purchase_entry（必含
+  "需在抖音 App 内下单"文案）/ refund_change_rules / updated_at(可选)`。
+  缺失字段由 CLI 层统一兜底显示"未披露"，适配器不做展示逻辑。
+- **可插拔验收口径**：新增模拟票源 = 新增一个模块实现 Source 并在
+  `sources/__init__.py` 的 `all_sources()` 登记，search/deals/watch 逻辑零改动
+  （PRD 4.5）。模拟团购数据内置一条退改规则缺失的记录（DY-005），用于验证兜底红线。
+
+## 3. 数据流
+
+```
+CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源调用 search，
+单源异常捕获降级 → 合并 → sort_offers() 价格升序 → 最低价标注 + alerts 命中判断
+→ 全中文格式化输出（CJK 等宽对齐）
+```
+
+模拟数据设计：航司源 5 条航线（SHA→PEK、SHA→CTU、SHA→KIX、PEK→SHA、CTU→SHA），
+票价 = 基础价 + 按星期浮动系数（确定性，同日期结果可复现、可测试）；团购源 5 张
+套餐，价格明显低于直连但带有效期/预约/退改限制。全部内置常量，无随机、无网络。
+
+## 4. 错误处理策略
+
+| 场景 | 行为 |
+|---|---|
+| 参数缺失/非法（含日期格式、日期早于今天、三字码不合法、--source 未知） | 中文错误说明 + 用法示例，退出码 2 |
+| 单票源适配器抛异常 | 捕获，输出"[提示] XX 源暂不可用"，其余票源照常展示（PRD AC2） |
+| 搜索结果为空 | 输出友好提示 + 已接入票源清单，退出码 0（非用户错误） |
+| alerts.json 缺失/损坏 | 按"无关注"处理，下次 watch 设置时自动重建 |
+| Windows GBK 控制台 | 启动时 stdout/stderr reconfigure 为 UTF-8，防中文乱码（交接坑提示 1） |
+
+诚实披露红线的技术保障：`disclose()` 统一兜底函数——字段为空/缺失一律输出
+"未披露，下单前请在购买页确认"；含价格输出的第一行永远是模拟数据声明。
+
+## 5. 测试策略
+
+- **单元测试**：标准库 `unittest`（tests/test_fareradar.py），聚焦核心纯逻辑：
+  多源合并与升序排序、最低价标记、票源失败降级（注入故障源）、缺失字段兜底、
+  日期/三字码校验、提醒阈值命中、alerts 读写、参数错误退出码。
+- **手工自测**：search/deals/watch 三命令真实运行，输出留档交接 QA。
+- 不引入 pytest 等第三方框架，与产品同守"零依赖"约束。
+
+## 6. 对 PM 三个待确认问题的技术决定
+
+| 问题 | 决定 | 理由 |
+|---|---|---|
+| Q1 入口形态 | `python src/fareradar.py` 单文件入口，不支持 `-m` | 零配置最友好；`-m` 需额外 `__main__.py` 且无用户收益；README 写清即 |
+| Q2 提醒存储 | 仓库根 `alerts.json`，UTF-8 JSON 列表 `{origin, destination, threshold, created_at}` | 总协调者已拍板 alerts.json（覆盖 PM 倾向的 fare-radar-watch.json，差异已记录）；标准库 json 单文件够用 |
+| Q3 参数语法 | `--from/--to/--date` 英文 flag + **三字码值**（内部 `from_code` 避让关键字） | 总协调者拍板三字码（覆盖 PM 示例中的中文城市值，差异已记录）；flag 解析稳妥，输出层用中文城市名（如"上海(SHA)"）保持友好 |
+
+## 7. 与 PRD/交接的差异记录（以 PRD 为准的裁决）
+
+1. alerts 文件名：交接倾向 `fare-radar-watch.json` → 按协调者决定改 `alerts.json`。
+   PRD 4.4 仅要求"本地持久化"，不冲突。
+2. 城市/机场参数值：交接示例用中文值 → 按协调者决定用三字码；PRD 4.2 明示
+   "CLI 具体形态由技术方案定"，语义（出发地/目的地/日期）不变，不违反 PRD。
+3. `watch` 裸命令行为：PRD 未定义"仅运行 watch"的含义 → 技术方案补充为
+   "检查全部关注航线的当前（明日）最低价并输出命中情况"，属增强不越界。

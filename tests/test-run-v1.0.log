@@ -1,0 +1,46 @@
+test_alerts_roundtrip (test_fareradar.AlertTest) ... ok
+test_load_missing_or_corrupted_returns_empty (test_fareradar.AlertTest) ... ok
+test_watch_check_hit (test_fareradar.AlertTest) ... ok
+test_watch_check_miss (test_fareradar.AlertTest) ... ok
+test_invalid_code_rejected (test_fareradar.CodeValidationTest) ... ok
+test_lowercase_normalized (test_fareradar.CodeValidationTest) ... ok
+test_bad_format_rejected (test_fareradar.DateValidationTest) ... ok
+test_past_date_rejected (test_fareradar.DateValidationTest) ... ok
+test_valid_date (test_fareradar.DateValidationTest) ... ok
+test_complete_deal_card_contract (test_fareradar.DiscloseTest) ... ok
+test_deal_without_refund_rules_shows_disclose (test_fareradar.DiscloseTest) ... ok
+test_disclose_fallback (test_fareradar.DiscloseTest) ... ok
+test_missing_date_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：--date 需为 YYYY-MM-DD 格式（如 2026-11-15），收到：None
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_no_command_returns_nonzero (test_fareradar.ExitCodeTest) ... ok
+test_same_origin_destination_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：出发地与到达地不能相同
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_unknown_source_returns_nonzero (test_fareradar.ExitCodeTest) ... 参数错误：--source 未知票源：nope（可选：simulated_airline、douyin_groupbuy）
+用法示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
+ok
+test_collect_merges_all_sources (test_fareradar.MergeAndSortTest) ... ok
+test_search_output_contract (test_fareradar.MergeAndSortTest) ... ok
+test_sorted_ascending_and_groupbuy_flagged (test_fareradar.MergeAndSortTest) ... ok
+test_broken_source_degrades (test_fareradar.SourceFailureTest) ... ok
+test_search_reports_unavailable_source (test_fareradar.SourceFailureTest) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.043s
+
+OK
+usage: fareradar [-h] {search,deals,watch} ...
+
+低价票雷达：把航司直连价与抖音团购套餐放在一起比（内置模拟数据源，不能购票）。
+
+positional arguments:
+  {search,deals,watch}
+    search              搜索比价：多票源合并，价格升序，标注最低价
+    deals               团购专区：套餐卡含价格/有效期/退改规则/下单提示
+    watch               低价提醒：设置/列表/删除底价；裸 watch 立即检查全部关注
+
+options:
+  -h, --help            show this help message and exit
+
+示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15
