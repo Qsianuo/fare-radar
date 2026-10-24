@@ -46,11 +46,12 @@ class MergeAndSortTest(unittest.TestCase):
         self.assertIn("simulated_airline", source_ids)
         self.assertIn("douyin_groupbuy", source_ids)
 
-    def test_sorted_ascending_and_groupbuy_flagged(self):
+    def test_rank_offers_comparable_first_then_price(self):
         offers, _ = fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 15))
-        offers = fr.sort_offers(offers)
-        prices = [o["price"] for o in offers]
-        self.assertEqual(prices, sorted(prices))
+        offers = fr.rank_offers(offers)
+        eligible = sorted(o["price"] for o in offers if o["tax_included"])
+        ineligible = sorted(o["price"] for o in offers if not o["tax_included"])
+        self.assertEqual([o["price"] for o in offers], eligible + ineligible)
         self.assertTrue(any(o["is_deal"] for o in offers), "合并结果应含团购行")
 
     def test_search_output_contract(self):
@@ -62,6 +63,38 @@ class MergeAndSortTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("[模拟数据]", out.splitlines()[0])
         self.assertIn("◀ 最低价", out)
+
+
+class TaxComparabilityTest(unittest.TestCase):
+    """ISSUE-001 回归：口径可比（含税）才可竞争"◀ 最低价"，不含税行必须披露"税费另计"。"""
+
+    def test_lowest_eligible_ignores_non_tax_rows(self):
+        offers = [{"price": 820, "tax_included": False}, {"price": 890, "tax_included": True}]
+        self.assertEqual(fr.lowest_eligible(offers)["price"], 890)
+
+    def test_no_eligible_lowest_when_all_non_tax(self):
+        self.assertIsNone(fr.lowest_eligible([{"price": 820, "tax_included": False}]))
+
+    def test_search_discloses_tax_and_marks_comparable_lowest(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fr.main(["search", "--from", "SHA", "--to", "PEK", "--date", "2026-11-03"])
+        lines = buf.getvalue().splitlines()
+        self.assertTrue(any("CZ3908" in ln and "税费另计" in ln for ln in lines),
+                        "不含税行必须含'税费另计'披露")
+        markers = [i for i, ln in enumerate(lines) if "◀ 最低价" in ln]
+        self.assertEqual(len(markers), 1)
+        self.assertIn("¥649", lines[markers[0] - 1], "标记必须落在含税最低行")
+
+    def test_kix_case_marker_on_comparable_row(self):
+        # ISSUE-005 并入回归：SHA→KIX 2026-12-20，¥1009 不含税不得标最低价
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fr.main(["search", "--from", "SHA", "--to", "KIX", "--date", "2026-12-20"])
+        lines = buf.getvalue().splitlines()
+        marker = next(i for i, ln in enumerate(lines) if "◀ 最低价" in ln)
+        self.assertIn("¥1099", lines[marker - 1], "标记应落在含税团购行而非不含税行")
+        self.assertTrue(any("9C8999" in ln and "税费另计" in ln for ln in lines))
 
 
 class SourceFailureTest(unittest.TestCase):
