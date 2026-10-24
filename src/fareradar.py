@@ -58,7 +58,7 @@ def tax_label(item):
     return "含税" if item.get("tax_included") else "不含税"
 
 
-def print_table(headers, rows, mark_first=False):
+def print_table(headers, rows, mark_index=None):
     widths = [max(display_width(h), max(display_width(r[i]) for r in rows))
               for i, h in enumerate(headers)]
     fmt = lambda cells: "  ".join(pad(c, w) for c, w in zip(cells, widths)).rstrip()
@@ -66,7 +66,7 @@ def print_table(headers, rows, mark_first=False):
     print(LINE)
     for i, row in enumerate(rows):
         print(fmt(row))
-        if mark_first and i == 0:
+        if i == mark_index:
             print(" " * (widths[0] + 2) + "◀ 最低价")
 
 
@@ -101,8 +101,25 @@ def collect(sources, origin, destination, date):
     return offers, failed
 
 
-def sort_offers(offers):
-    return sorted(offers, key=lambda offer: offer["price"])
+def rank_offers(offers):
+    """展示排序（ISSUE-001）："◀ 最低价"只授予口径可比（含税）的行——
+    可比行在前按价格升序，不含税行在后按价格升序，永不取得最低价标记。"""
+    return sorted(offers, key=lambda offer: (not offer.get("tax_included"), offer["price"]))
+
+
+def lowest_eligible(offers):
+    """可取得"◀ 最低价"并触发低价提醒的最低价（ISSUE-001：仅含税口径可比行参与）；
+    没有可比行时返回 None——宁可不给标记，不给假箭头。"""
+    eligible = [offer for offer in offers if offer.get("tax_included")]
+    return min(eligible, key=lambda offer: offer["price"]) if eligible else None
+
+
+def search_note(offer):
+    """结果行备注：追加口径与可用性披露（ISSUE-001：不含税行必须显著披露"税费另计"）。"""
+    note = offer["note"]
+    if not offer.get("tax_included"):
+        note += "｜税费另计，到手价高于票面"
+    return note
 
 
 def load_alerts(path=ALERTS_FILE):
@@ -157,14 +174,16 @@ def cmd_search(args):
         print(f"可尝试已有航线，如：search --from SHA --to KIX --date {date.isoformat()}")
         return 0
 
-    offers = sort_offers(offers)
-    lowest = offers[0]
+    offers = rank_offers(offers)
+    lowest = lowest_eligible(offers)
     alert = find_alert(load_alerts(), origin, destination)
-    if alert and lowest["price"] <= alert["threshold"]:
+    if alert and lowest and lowest["price"] <= alert["threshold"]:
         print(f"[低价提醒] 当前最低 ¥{lowest['price']} ≤ 你的底价 ¥{alert['threshold']}，可以出手了！")
+    if lowest is None:
+        print("本次结果中没有口径可比的最低价，原因见各行备注。")
     print_table(("价格", "票源", "航班/套餐", "含税", "备注"),
-                [(f"¥{o['price']}", o["source_name"], o["product"], tax_label(o), o["note"])
-                 for o in offers], mark_first=True)
+                [(f"¥{o['price']}", o["source_name"], o["product"], tax_label(o), search_note(o))
+                 for o in offers], mark_index=offers.index(lowest) if lowest else None)
     return 0
 
 
@@ -249,11 +268,15 @@ def _watch_check(alerts):
         if not offers:
             extra = f"（{'、'.join(failed)} 源不可用）" if failed else ""
             print(f"— {route}：暂无报价数据{extra}")
-        elif (lowest := min(o["price"] for o in offers)) <= a["threshold"]:
+            continue
+        lowest = lowest_eligible(offers)
+        if lowest is None:
+            print(f"— {route}：无可比最低价（原因见各行备注），本次不计入提醒。")
+        elif lowest["price"] <= a["threshold"]:
             hits += 1
-            print(f"[低价提醒] {route} 当前最低 ¥{lowest} ≤ 底价 ¥{a['threshold']}，可以出手了！")
+            print(f"[低价提醒] {route} 当前最低 ¥{lowest['price']} ≤ 底价 ¥{a['threshold']}，可以出手了！")
         else:
-            print(f"— {route} 当前最低 ¥{lowest}，未达底价 ¥{a['threshold']}，继续等待。")
+            print(f"— {route} 当前最低 ¥{lowest['price']}，未达底价 ¥{a['threshold']}，继续等待。")
     if hits:
         print(f"共 {hits} 条航线命中底价。")
     return 0

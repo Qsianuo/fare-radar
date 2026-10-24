@@ -49,7 +49,25 @@ $ python src/fareradar.py search --from SHA --to PEK --date 2026-11-03
 
 ## Reproduce（Dev 填）
 
+- 复现人: Dev | 日期: 2026-10-24 | 分支: main（5bae8ed）| 结果: **复现成功**
+- 执行提交人命令 `search --from SHA --to PEK --date 2026-11-03`：CZ3908（¥820，不含税）排在 MU5101（¥890，含税）上方；团购行 ¥649 标 `◀ 最低价` 尚属正确，但若该行不存在，标记将落到不含税行。
+- 执行 `search --from SHA --to KIX --date 2026-12-20`（ISSUE-005 并入案例）：**¥1009（不含税）直接标上 `◀ 最低价`**，压过 ¥1099 含税——比 PEK 案例更严重，标记本身已错误。两条命令输出已原样留档于复现过程。
+
+**根因分析**（定位到代码）：
+- `src/fareradar.py` 的 `sort_offers()` 仅按 `offer["price"]` 升序排序，不区分 `tax_included` 口径；`cmd_search` 取排序后第一行标 `◀ 最低价`，`_watch_check` 用 `min(price)` 判断提醒——三处都把"票面价"当"到手价"用。
+- 根源是 v1.0 的隐含假设"所有行同口径可比"，与模拟航司源存在不含税票价（`simulated_airline.py` 的 CZ3908/MU5102/9C8999 等结构）冲突。排序、标记、提醒三条路径必须统一改为"口径可比（含税）才参与最低价竞争"。
+
 ## Fix（Dev 填）
+
+- 修复分支: `fix/issue-001`（基于 main 5bae8ed）| 对应 PR: prs/PR-002.md | 方案类型: **排序准入式**（归一估算不做，未采用分组展示）
+- 核心改动（src/fareradar.py）:
+  1. 新增 `rank_offers()`：可比（含税）行在前按价格升序、不含税行在后按价格升序——不含税行结构性退出"最低价"竞争；
+  2. 新增 `lowest_eligible()`：`◀ 最低价` 标记与 `[低价提醒]` 只取自可比行最低者；无可比行返回 None 并输出"没有口径可比的最低价"提示（宁缺毋假）；
+  3. 新增 `search_note()`：不含税行备注追加"税费另计，到手价高于票面"（满足 AC1-R 显著披露）；
+  4. `print_table` 标记参数改为指定行（mark_index）；裸 `watch` 检查同样改用 `lowest_eligible`，杜绝不含税价误触发提醒。
+- 模拟数据未改动（不含税票价结构保留，为任务书"不许顺手改"要求）。
+- 补充测试（tests/test_fareradar.py，4 例）：`TaxComparabilityTest`——可比最低价判定、全不含税无标记、PEK 案例行内披露+标记落点、KIX 案例（ISSUE-005 并入回归）；另将原排序用例改写为新的排序语义。
+- 自测: 25 例全绿；`search --from SHA --to PEK --date 2026-11-03` 中 CZ3908（¥820）退居可比行之后且行内含"税费另计"；`search --from SHA --to KIX --date 2026-12-20` 中 `◀ 最低价` 落在 ¥1099 含税团购行。
 
 ## Code Review（总协调者填）
 
