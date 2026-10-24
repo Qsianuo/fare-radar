@@ -1,5 +1,5 @@
 # ISSUE-001: 标着"最低价"的票未必真最低——不含税价没算税费就和含税价一起排序
-- 提交人: Tester | 日期: 2026-10-24 | 状态: 已确认（Bug/P1，v1.1.0 修复）
+- 提交人: Tester | 日期: 2026-10-24 | 状态: Closed（Fixed，验收通过，PR-002 / v1.1.0）
 - 类型: 🐛Bug
 
 ## 问题描述（我在做什么时遇到了什么，用户视角）
@@ -93,3 +93,8 @@ $ python src/fareradar.py search --from SHA --to PEK --date 2026-11-03
 ## User Acceptance（User 填）
 
 ## Closed（PM 填，关联 PR/版本）
+
+- 关闭人: PM | 日期: 2026-10-25 | 结论: **关闭（Fixed，验收通过）**
+- 关联: PR-002（合并提交 625e794，main）| Test: 本文 Test 节（Tester，2026-10-25：原复现命令与第二日期 11-05 通过，设底价 ¥850 后 `[低价提醒]` 计数 0——不再误触发）| User Acceptance: 本单无独立 UA 节，用户确认由 **ISSUE-005 的 User Acceptance 节**承载（005 即并入本单的 KIX 案例，User A 重验通过："敢照着这个箭头做决定"）。
+- 验收对照（handoff-pm-to-dev-fix.md 判定标准）: ①不含税行退出竞争且行内披露"税费另计" ✔ ②底价 ¥850 不因 ¥820 误触发 ✔ ③KIX 案例标记落 ¥1099 含税行 ✔ ④全不含税输入无标记（随 ISSUE-004 的 PEK→SHA 场景验证）✔。
+- 版本: v1.1.0（releases/RELEASE-v1.1.0.md）。遗留: 无。
