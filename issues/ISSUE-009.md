@@ -39,7 +39,27 @@
 
 ## Reproduce（Dev 填）
 
-## Fix（Dev 填）
+- 复现人: Dev | 日期: 2026-10-25 | 分支: main（1301608）| 结果: **7 点逐条核对属实**
+- 【1】`webapp.html` 城市候选为 `<datalist>` 且 `option value=三字码`，按值过滤中文输入几乎无候选；仅内置 5 城。【3】`simulated_airline.py` display_name="模拟航司源"、`douyin_groupbuy.py`="抖音团购源(模拟)"，行内透出"模拟"术语。【4】价格完全静态，无任何波动呈现。【5/6】票源注册表仅 2 个。【2/7】watch 页签为"心理底价+解释性文案"，无收藏语义与仪表；界面为 v1.2 基础样式。
+- 根因层定位：城市/票源硬编码分散在 `webapp.html`（datalist）与旧 `simulated_airline.py`（固定 5 航线 `_ROUTES`），没有统一注册表与定价引擎；诚实声明文案以"模拟数据"逐行承担，未形成"演示声明常驻+行内用户语言"的分工。
+
+## Fix（Dev 填）（后端部分，前端归 UI 工程师第二棒）
+
+- 修复分支: `feature/v1.3`（基于 main，不合并）| 后端全部就绪，单测 60 例全绿；API 契约见 docs/handoffs/handoff-dev-api-v13.md
+- **城市注册表** `src/sources/cities.py`：PRD 第 4 节 25 城（码/中文名/经纬度）唯一事实来源，提供 `city_name/all_cities/distance_km`；CLI 提示、API 下拉、定价引擎统一读取。
+- **确定性定价引擎** `src/sources/pricing.py`：大圆距离基础价（180+0.42×km，远贵近廉）× 票源档位 + 星期因子；**分钟级演示波动**=sin(分钟/7+相位(key))，幅度 ±3.5%，无随机数；`fixed_minute` 上下文（线程局部）支持 24h 曲线确定性重放。波动统一作用于全部报价（含精选券，按 deal_id 相位——否则精选券为最低价时曲线全平，见交接文档技术决定 1）。**专门单测锁定"同一分钟 CLI 与网页同价"**（DemoFluctuationTest）。
+- **票源家族 5 个**（全部注册进 sources/__init__.py，display_name 去"模拟"）：
+  - `airline` 航司直连（原 simulated_airline 改造：任意航线 2 舱位，含税主舱 + 不含税低成本舱，保留"税费另计"资产）
+  - `ota` OTA 比价（新增：特惠代理含税 + 低价引流不含税，代理退改更严/服务费披露）
+  - `douyin_groupbuy` 抖音团购（DY-001~005 精选套餐与 DY-004 售罄、DY-005 缺退改资产原样保留，改名去术语）
+  - `douyin_miniapp` 抖音小程序·春秋航空（新增：会员价特征，0.85 档，不含行李额/时段偏早晚披露）
+  - `douyin_live` 抖音直播间（新增：秒杀特征 0.78 档，is_deal 券语义，场次按天确定性轮换、库存哈希分布含"售罄"、3 日有效期）
+- **CLI 输出层**：首行声明统一"[演示数据]…含分钟级演示波动"；watch 全部措辞"关注→收藏"，底价允许为空（唯一授权演进，存量兼容）；未知城市码中文提示不编造；`--source` 接受 5 个新 id。
+- **Web API**（webapp.py，规则唯一来源不变）：新增 `GET /api/cities`、`GET /api/sources`、`GET /api/trend`（24h 确定性重放曲线 + 今日区间）；search 载荷补 `source_id/source_desc/risk_flags/notice`；deals 卡片补 `source_name`；watch/set 底价可省略、list 补 `current_lowest/below_threshold`（供收藏页绿色标记）。
+- **测试**：35→60 例。改写 9 例（票源名/合并集合/README 示例/引擎定价下的标记落点，逐条见 git 提交）；新增 16 例：城市注册表完整性、任意偏远航线（HRB→SYX 等）、5 票源合并与命名、分钟波动确定性（同分钟 CLI=网页、跨分钟变化、幅度有界）、/api/cities 与 /api/trend 契约、空底价收藏兼容、测试资产保留断言。
+- **文档**：README 重写（票源家族/城市全集/演示波动 FAQ/真实示例输出注明会随波动变化）；交接文档含契约与 4 项技术决定（含任务书示例 SHA→URC 不在 25 城清单的差异记录）。
+- 红线自查：演示声明常驻（输出层）、规则唯一来源（CLI/网页同函数）、纯标准库、CLI 参数语义与退出码未变；webapp.html 未动（归 UI 工程师）。
+
 
 ## Code Review（总协调者填）
 

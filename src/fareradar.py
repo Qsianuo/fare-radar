@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """低价票雷达 FareRadar —— 单文件 CLI 入口：python src/fareradar.py <search|deals|watch>。
 
-输出铁律：含价格的输出首行必标模拟数据声明；字段缺失显示"未披露"；
+输出铁律：含价格的输出首行必标演示数据声明；字段缺失显示"未披露"；
 全中文；关键标记用文字符号，不依赖 ANSI 颜色。
 """
 
@@ -12,7 +12,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from sources import all_sources, source_by_id
+from sources import all_sources, cities, source_by_id
 
 try:  # Windows 控制台默认 GBK，强制 UTF-8 防中文乱码（交接坑提示 1）
     for _stream in (sys.stdout, sys.stderr):
@@ -26,9 +26,8 @@ LINE = "-" * 64
 DISCLOSE = "未披露，下单前请在购买页确认"
 REFUND_DISCLOSE = ("商家未公布退改规则，此类券风险最高；"
                    "下单前务必在抖音购买页核对退改条款，并截图留证")
-SIM_NOTICE = "[模拟数据] 以下价格来自内置模拟票源，非真实报价，不能用于实际购票。"
-DEALS_NOTICE = "[模拟数据] 以下团购套餐来自模拟数据源，非真实商品，不能直接购买。"
-CITY = {"SHA": "上海", "PEK": "北京", "CTU": "成都", "KIX": "大阪关西", "CAN": "广州"}
+SIM_NOTICE = "[演示数据] 以下价格来自内置演示票源，非真实报价；价格含分钟级演示波动，不能用于实际购票。"
+DEALS_NOTICE = "[演示数据] 以下团购套餐来自内置演示票源，非真实商品，不能直接购买。"
 WATCH_USAGE = "示例：watch --from SHA --to PEK --price 700"
 
 
@@ -39,7 +38,9 @@ class UsageError(Exception):
 # ---------- 格式化 ----------
 
 def city(code):
-    return f"{CITY[code]}({code})" if code in CITY else code
+    """三字码 → 中文展示名（城市注册表为唯一事实来源），未知码原样返回。"""
+    name = cities.city_name(code)
+    return f"{name}({code})" if name else code
 
 
 def display_width(text):  # 全角/宽字符按 2 列计，保证中文表格对齐
@@ -136,22 +137,29 @@ def lowest_eligible(offers, date):
     return min(eligible, key=lambda offer: offer["price"]) if eligible else None
 
 
-def search_note(offer, date):
-    """结果行备注：追加口径与可用性披露；"不覆盖"信息必须可见（PRD v1.1 AC6）。"""
-    note = offer.get("note", "")
+def risk_flags(offer, date):
+    """行内风险标记（结构化，PRD v1.3：网页与 CLI 同词表渲染）。"""
+    flags = []
     if not offer.get("tax_included"):
-        note += "｜税费另计，到手价高于票面"
+        flags.append("税费另计，到手价高于票面")
     if offer.get("is_deal"):
         if offer.get("stock") == "售罄":
-            note += "｜已售罄，暂时抢不到"
+            flags.append("已售罄，暂时抢不到")
         if not offer.get("refund_disclosed", True):
-            note += "｜退改不明"  # AC8：退改规则缺失的券必须带标记，不能只标最低价
+            flags.append("退改不明")  # AC8：退改规则缺失的券必须带标记，不能只标最低价
         state = _validity_state(offer, date)
         if state == "not_covered":
-            note += f"｜有效期不覆盖 {date.isoformat()} 出发"
+            flags.append(f"有效期不覆盖 {date.isoformat()} 出发")
         elif state == "unknown":
-            note += "｜有效期无法确认是否覆盖出发日期，请到购买页核对"
-    return note
+            flags.append("有效期无法确认是否覆盖出发日期，请到购买页核对")
+    return flags
+
+
+def search_note(offer, date):
+    """结果行备注：原始备注 + 风险标记，"不覆盖"信息必须可见（PRD v1.1 AC6）。"""
+    note = offer.get("note", "")
+    flags = risk_flags(offer, date)
+    return f"{note}｜{'｜'.join(flags)}" if flags else note
 
 
 class AlertsCorrupted(Exception):
@@ -218,9 +226,13 @@ def cmd_search(args):
     for name in failed:
         print(f"[提示] {name} 暂不可用，已跳过（不影响其他票源）。")
     if not offers:
-        names = "、".join(s.display_name for s in sources)
-        print(f"该航线暂无可用报价（已接入票源：{names}）。")
-        print(f"可尝试已有航线，如：search --from SHA --to KIX --date {date.isoformat()}")
+        unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
+        if unknown:
+            print(f"城市码 {'、'.join(unknown)} 不在已支持的 25 城清单中，"
+                  f"可查看 README 城市全集或访问网页版下拉选择。")
+        else:
+            names = "、".join(s.display_name for s in sources)
+            print(f"该航线暂无可用报价（已接入票源：{names}）。")
         return 0
 
     offers = rank_offers(offers, date)
@@ -229,7 +241,8 @@ def cmd_search(args):
         alert = find_alert(load_alerts(), origin, destination)
     except AlertsCorrupted:
         alert = None  # 警告已打印；关注文件损坏不阻断搜索主流程，本次仅跳过提醒比对
-    if alert and lowest and lowest["price"] <= alert["threshold"]:
+    if (alert and lowest and alert.get("threshold") is not None
+            and lowest["price"] <= alert["threshold"]):
         print(f"[低价提醒] 当前最低 ¥{lowest['price']} ≤ 你的底价 ¥{alert['threshold']}，可以出手了！")
     if lowest is None:
         print("本次结果中没有口径可比的最低价，原因见各行备注。")
@@ -241,7 +254,7 @@ def cmd_search(args):
 
 def _deal_card(deal):
     return [
-        f"┌ 套餐：{deal['name']} [{deal['deal_id']}]",
+        f"┌ 套餐：{deal['name']} [{deal['deal_id']}｜票源：{disclose(deal.get('source_name'), '未披露')}]",
         f"│ 航线：{city(deal['origin'])} → {city(deal['destination'])}",
         f"│ 价格：¥{deal['price']}（{tax_label(deal)}）｜库存：{disclose(deal.get('stock'), '未披露')}",
         f"│ 有效期：{disclose(deal.get('valid_from'), '未披露')} ~ {disclose(deal.get('valid_until'), '未披露')}",
@@ -285,33 +298,33 @@ def _watch_set(args, alerts):
     alerts.append({"origin": origin, "destination": destination, "threshold": threshold,
                    "created_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M")})
     save_alerts(alerts)
-    print(f"已保存关注：{city(origin)} → {city(destination)}，底价 ¥{threshold}。")
-    print("每次 search 或 watch 时自动比对（模拟数据），命中即输出 [低价提醒]。")
+    print(f"已保存收藏：{city(origin)} → {city(destination)}，底价 ¥{threshold}。")
+    print("每次 search 或 watch 时自动比对（演示数据），命中即输出 [低价提醒]。")
     return 0
 
 
 def _watch_remove(args, alerts):
     if not (args.from_code and args.to_code):
-        raise UsageError("删除关注需同时提供 --from --to --remove，如：watch --from SHA --to PEK --remove")
+        raise UsageError("删除收藏需同时提供 --from --to --remove，如：watch --from SHA --to PEK --remove")
     origin = normalize_code(args.from_code, "from")
     destination = normalize_code(args.to_code, "to")
     rest = [a for a in alerts
             if not (a.get("origin") == origin and a.get("destination") == destination)]
     if len(rest) == len(alerts):
-        print(f"未找到关注：{origin} → {destination}。用 watch --list 查看现有关注。")
+        print(f"未找到收藏：{origin} → {destination}。用 watch --list 查看现有收藏。")
         return 0
     save_alerts(rest)
-    print(f"已删除关注：{origin} → {destination}，此后不再触发该航线提醒。")
+    print(f"已删除收藏：{origin} → {destination}。")
     return 0
 
 
 def _watch_check(alerts):
     print(SIM_NOTICE)
     if not alerts:
-        print(f"暂无关注航线。{WATCH_USAGE}，再运行 watch 检查。")
+        print(f"暂无收藏航线。{WATCH_USAGE}，再运行 watch 检查。")
         return 0
     date = dt.date.today() + dt.timedelta(days=1)
-    print(f"检查 {len(alerts)} 条关注航线｜按明天（{date.isoformat()}）出发的模拟最低价判断")
+    print(f"检查 {len(alerts)} 条收藏航线｜按明天（{date.isoformat()}）出发的演示最低价判断")
     print(LINE)
     hits = 0
     for a in alerts:
@@ -322,13 +335,16 @@ def _watch_check(alerts):
             print(f"— {route}：暂无报价数据{extra}")
             continue
         lowest = lowest_eligible(offers, date)
+        threshold = a.get("threshold")
         if lowest is None:
             print(f"— {route}：无可比最低价（原因见各行备注），本次不计入提醒。")
-        elif lowest["price"] <= a["threshold"]:
+        elif threshold is None:
+            print(f"— {route} 当前最低 ¥{lowest['price']}（未设底价，仅收藏）。")
+        elif lowest["price"] <= threshold:
             hits += 1
-            print(f"[低价提醒] {route} 当前最低 ¥{lowest['price']} ≤ 底价 ¥{a['threshold']}，可以出手了！")
+            print(f"[低价提醒] {route} 当前最低 ¥{lowest['price']} ≤ 底价 ¥{threshold}，可以出手了！")
         else:
-            print(f"— {route} 当前最低 ¥{lowest['price']}，未达底价 ¥{a['threshold']}，继续等待。")
+            print(f"— {route} 当前最低 ¥{lowest['price']}，未达底价 ¥{threshold}，继续等待。")
     if hits:
         print(f"共 {hits} 条航线命中底价。")
     return 0
@@ -341,12 +357,13 @@ def cmd_watch(args):
         return 2  # 警告已打印；损坏状态下拒绝一切读/写操作，保护原文件不被覆盖
     if args.list:
         if not alerts:
-            print(f"暂无关注航线。{WATCH_USAGE}")
+            print(f"暂无收藏航线。{WATCH_USAGE}")
             return 0
-        print(f"共 {len(alerts)} 条关注航线：")
+        print(f"共 {len(alerts)} 条收藏航线：")
         for i, a in enumerate(alerts, 1):
-            print(f"{i}. {a['origin']} → {a['destination']}   底价 ¥{a['threshold']}"
-                  f"   设置时间 {a['created_at']}")
+            threshold = (f"底价 ¥{a['threshold']}" if a.get("threshold") is not None else "未设底价")
+            print(f"{i}. {a['origin']} → {a['destination']}   {threshold}"
+                  f"   收藏时间 {a.get('created_at', '未披露')}")
         return 0
     if args.remove:
         return _watch_remove(args, alerts)
@@ -362,16 +379,17 @@ def cmd_watch(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="fareradar",
-        description="低价票雷达：把航司直连价与抖音团购套餐放在一起比（内置模拟数据源，不能购票）。",
+        description="低价票雷达：航司直连、OTA 比价与抖音系票源放在一起比（内置演示数据，不能购票）。",
         epilog="示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15",
     )
     sub = parser.add_subparsers(dest="command")
 
-    p_search = sub.add_parser("search", help="搜索比价：多票源合并，价格升序，标注最低价")
+    p_search = sub.add_parser("search", help="搜索比价：5 大票源合并，价格升序，标注最低价")
     p_search.add_argument("--from", dest="from_code", help="出发三字码，如 SHA")
     p_search.add_argument("--to", dest="to_code", help="到达三字码，如 PEK")
     p_search.add_argument("--date", help="出发日期 YYYY-MM-DD")
-    p_search.add_argument("--source", help="只查指定票源（如 simulated_airline / douyin_groupbuy）")
+    p_search.add_argument("--source",
+                          help="只查指定票源（airline / ota / douyin_groupbuy / douyin_miniapp / douyin_live）")
     p_search.set_defaults(func=cmd_search)
 
     p_deals = sub.add_parser("deals", help="团购专区：套餐卡含价格/有效期/退改规则/下单提示")
@@ -379,12 +397,12 @@ def build_parser():
     p_deals.add_argument("--to", dest="to_code", help="按到达三字码过滤（可选）")
     p_deals.set_defaults(func=cmd_deals)
 
-    p_watch = sub.add_parser("watch", help="低价提醒：设置/列表/删除底价；裸 watch 立即检查全部关注")
+    p_watch = sub.add_parser("watch", help="收藏航线：设置/列表/删除底价；裸 watch 立即检查全部收藏")
     p_watch.add_argument("--from", dest="from_code", help="出发三字码")
     p_watch.add_argument("--to", dest="to_code", help="到达三字码")
     p_watch.add_argument("--price", help="底价（正整数，元）")
-    p_watch.add_argument("--list", action="store_true", help="列出全部关注航线")
-    p_watch.add_argument("--remove", action="store_true", help="删除该航线关注")
+    p_watch.add_argument("--list", action="store_true", help="列出全部收藏航线")
+    p_watch.add_argument("--remove", action="store_true", help="删除该航线收藏")
     p_watch.set_defaults(func=cmd_watch)
     return parser
 
