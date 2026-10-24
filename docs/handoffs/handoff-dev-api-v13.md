@@ -96,3 +96,15 @@
 2. **任务书测试示例 SHA→URC 不可查**：URC 不在 PRD 第 4 节 25 城清单（清单即边界）。单测改用 HRB→SYX、KMG→HKG 等清单内偏远航线；若产品坚持 URC，在 `cities.py` 的 `_CITIES` 加一行即可（唯一改动点）。
 3. 直播间闪购"3 日券"有效期＝自查询日起 3 天（可出行窗口口径），远期搜索会如实标注"有效期不覆盖"；闪购场次按天确定性轮换（每日 4 条航线）。
 4. `--source` 的票源 id 由 `simulated_airline` 更名为 `airline`，并新增 ota/douyin_miniapp/douyin_live（CLI 参数语义与退出码约定未变）。
+
+## 五、v1.3.1 增量（ISSUE-010，覆盖模型与渠道入口；向后兼容只增不改）
+
+1. **GET /api/search 新增 `unavailable_sources`**：`[{"source_id", "name", "reason"}]`——本次"覆盖不含此航线/当日无座"的渠道及中文原因，与 `failed`（适配器异常）语义不同，UI 应分区展示（failed=错误样式，unavailable=中性说明）。示例（CGO→XIY）：
+   ```json
+   "unavailable_sources": [
+     {"source_id": "douyin_groupbuy", "name": "抖音团购", "reason": "仅精选套餐航线，该航线未上团购"},
+     {"source_id": "douyin_miniapp", "name": "抖音小程序·春秋航空", "reason": "仅覆盖春秋基地航线（上海/沈阳/深圳/大阪至少一端），该航线可能未执飞"},
+     {"source_id": "douyin_live", "name": "抖音直播间", "reason": "今日闪购场次未含该航线"}]
+   ```
+2. **渠道入口字段**：`/api/sources` 每源新增 `entry_url`/`entry_note`；search 的 offers 行、deals 卡片同样携带。`entry_url` 允许为空串（airline 多家航司无单一入口）——**空串不渲染链接**。已定值：miniapp=评审人官方分享链接（note"春秋航空抖音小程序"）、groupbuy=https://v.douyin.com/dIviP77Fqow/（note"春秋航空 · 固定航线机票（抖音地点页）"）、live=douyin.com、ota=ctrip.com（note 含"示例入口"）。前端以新窗口打开（rel=noopener）。
+3. **覆盖语义**（前端提示文案可依赖）：miniapp 仅春秋基地航线（至少一端 ∈ SHA/SHE/SZX/KIX）且约 1/7 日期"当日无座"；groupbuy 仅精选航线；live 按天场次轮换。UI 不要为 unavailable 的渠道渲染空行或占位价。

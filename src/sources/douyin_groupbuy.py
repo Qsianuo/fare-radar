@@ -55,6 +55,13 @@ class DouyinGroupbuySource(Source):
     source_id = "douyin_groupbuy"
     display_name = _SOURCE_NAME
     tagline = "精选套餐券，有效期＝可出行窗口，需抖音 App 下单"
+    entry_url = "https://v.douyin.com/dIviP77Fqow/"
+    entry_note = "春秋航空 · 固定航线机票（抖音地点页）"
+
+    def availability(self, origin, destination, date):
+        """仅精选套餐航线有销售（ISSUE-010 覆盖模型）。"""
+        covered = any(d["origin"] == origin and d["destination"] == destination for d in _DEALS)
+        return (True, None) if covered else (False, "仅精选套餐航线，该航线未上团购")
 
     def search(self, origin, destination, date):
         return [self._to_offer(self._priced(dict(d))) for d in self._filter(origin, destination)]

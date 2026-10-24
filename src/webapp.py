@@ -59,8 +59,8 @@ def _unknown_city_hint(origin, destination):
 
 def _route_lowest(origin, destination, date):
     """某航线当前（全票源）可比最低价：收藏页与检查共用，规则同 CLI。"""
-    offers, failed = fr.collect(all_sources(), origin, destination, date)
-    return fr.lowest_eligible(offers, date), failed
+    offers, _failed, _unavailable = fr.collect(all_sources(), origin, destination, date)
+    return fr.lowest_eligible(offers, date), _failed
 
 
 def _api_cities(_params):
@@ -111,7 +111,7 @@ def _api_search(params):
     except fr.UsageError as exc:
         return 400, {"ok": False, "error": str(exc)}
 
-    offers, failed = fr.collect(sources, origin, destination, date)
+    offers, failed, unavailable = fr.collect(sources, origin, destination, date)
     offers = fr.rank_offers(offers, date)
     lowest = fr.lowest_eligible(offers, date)
     catalog = {s["id"]: s["description"] for s in source_catalog()}
@@ -120,6 +120,8 @@ def _api_search(params):
         "source_id": o["source_id"],
         "source_name": o["source_name"],
         "source_desc": catalog.get(o["source_id"], ""),
+        "entry_url": o.get("entry_url", ""),
+        "entry_note": o.get("entry_note", ""),
         "product": o["product"],
         "tax_label": fr.tax_label(o),
         "note": fr.search_note(o, date),
@@ -140,7 +142,8 @@ def _api_search(params):
     empty_hint = None
     if not rows:
         empty_hint = (_unknown_city_hint(origin, destination)
-                      or "该航线暂无可用报价（已接入票源见 /api/sources）。")
+                      or ("本次查询所选渠道均无销售，原因见 unavailable_sources。"
+                          if unavailable else "该航线暂无可用报价（已接入票源见 /api/sources）。"))
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
@@ -148,6 +151,7 @@ def _api_search(params):
         "weekday": f"周{'一二三四五六日'[date.weekday()]}",
         "notice": fr.SIM_NOTICE,
         "failed": failed,
+        "unavailable_sources": unavailable,  # 覆盖外/当日无座的渠道及原因（区别于 failed 异常）
         "offers": rows,
         "alert_hit": alert_hit,
         "warning": warning,
@@ -161,10 +165,17 @@ def _api_deals(params):
         destination = fr.normalize_code(params["to"], "to") if params.get("to") else None
     except fr.UsageError as exc:
         return 400, {"ok": False, "error": str(exc)}
-    deals = [d for s in all_sources() for d in s.deals(origin, destination)]
+    deals = []
+    for source in all_sources():
+        for d in source.deals(origin, destination):
+            d["entry_url"] = source.entry_url      # 渠道入口（ISSUE-010），卡片可点击
+            d["entry_note"] = source.entry_note
+            deals.append(d)
     cards = [{
         "deal_id": d.get("deal_id", "未披露"),
         "source_name": fr.disclose(d.get("source_name"), "未披露"),
+        "entry_url": d.get("entry_url", ""),
+        "entry_note": d.get("entry_note", ""),
         "name": d.get("name", "未披露"),
         "price": d["price"],
         "tax_label": fr.tax_label(d),

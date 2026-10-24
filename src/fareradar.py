@@ -94,14 +94,27 @@ def parse_date(raw):
 
 
 def collect(sources, origin, destination, date):
-    """逐源调用 search；单源异常降级为提示，不拖垮整体（PRD AC2）。"""
-    offers, failed = [], []
+    """逐源收集报价（引擎统一执行覆盖模型，ISSUE-010）。
+
+    返回 (offers, failed, unavailable)：
+    - unavailable：本次"覆盖不含此航线/当日无座"的渠道 [{source_id, name, reason}]，
+      与 failed（适配器异常降级）语义不同；
+    - 比价行由引擎统一附上所在渠道 entry_url/entry_note（规则唯一来源）。"""
+    offers, failed, unavailable = [], [], []
     for source in sources:
         try:
-            offers.extend(source.search(origin, destination, date))
+            available, reason = source.availability(origin, destination, date)
+            if not available:
+                unavailable.append({"source_id": source.source_id,
+                                    "name": source.display_name, "reason": reason})
+                continue
+            for offer in source.search(origin, destination, date):
+                offer["entry_url"] = source.entry_url
+                offer["entry_note"] = source.entry_note
+                offers.append(offer)
         except Exception:
             failed.append(source.display_name)
-    return offers, failed
+    return offers, failed, unavailable
 
 
 def _validity_state(offer, date):
@@ -219,17 +232,22 @@ def cmd_search(args):
     date = parse_date(args.date)
     sources = _selected_sources(args.source)
 
-    offers, failed = collect(sources, origin, destination, date)
+    offers, failed, unavailable = collect(sources, origin, destination, date)
     print(SIM_NOTICE)
     weekday = "一二三四五六日"[date.weekday()]
     print(f"航线：{city(origin)} → {city(destination)}   日期：{date.isoformat()}（周{weekday}）")
     for name in failed:
         print(f"[提示] {name} 暂不可用，已跳过（不影响其他票源）。")
+    if unavailable:
+        detail = "、".join(f"{u['name']}（{u['reason']}）" for u in unavailable)
+        print(f"以下渠道本次无销售：{detail}")
     if not offers:
         unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
         if unknown:
             print(f"城市码 {'、'.join(unknown)} 不在已支持的 25 城清单中，"
                   f"可查看 README 城市全集或访问网页版下拉选择。")
+        elif unavailable and not failed:
+            print("本次查询所选渠道均无销售，原因见上；可更换日期或航线再试。")
         else:
             names = "、".join(s.display_name for s in sources)
             print(f"该航线暂无可用报价（已接入票源：{names}）。")
@@ -328,7 +346,7 @@ def _watch_check(alerts):
     print(LINE)
     hits = 0
     for a in alerts:
-        offers, failed = collect(all_sources(), a["origin"], a["destination"], date)
+        offers, failed, _unavailable = collect(all_sources(), a["origin"], a["destination"], date)
         route = f"{a['origin']} → {a['destination']}"
         if not offers:
             extra = f"（{'、'.join(failed)} 源不可用）" if failed else ""

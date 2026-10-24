@@ -196,6 +196,9 @@ tr.row-lowest .price{font-size:19px;color:var(--brand-strong)}
 .chip-stock{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);margin-left:10px}
 .chip-soldout{background:#f0f2f6;color:var(--muted);border:1px solid var(--line);margin-left:10px}
 .source-desc{margin-top:3px;max-width:220px;font-size:12px;color:var(--muted)}
+.entry-link{display:inline-block;margin-top:4px;font-size:12px;color:var(--brand-strong);text-decoration:none;border-bottom:1px dashed currentcolor;padding-bottom:1px}
+.entry-link:hover{color:var(--brand);border-bottom-style:solid}
+.deal-card .entry-link{margin-top:10px}
 .cell-tax{color:var(--ink-2);white-space:nowrap}
 .cell-product{max-width:230px}
 .cell-note{color:var(--ink-2);max-width:270px}
@@ -755,6 +758,14 @@ function renderSearch(out, data) {
     if (o.is_deal) sname.append(el("span", "chip chip-deal", "券"));
     tdS.append(sname);
     if (o.source_desc) tdS.append(el("div", "source-desc", o.source_desc));
+    if (o.entry_url) {
+      const link = el("a", "entry-link", "前往渠道 ↗");
+      link.href = o.entry_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      if (o.entry_note) link.title = o.entry_note;
+      tdS.append(link);
+    }
     tr.append(tdP, tdS,
       el("td", "cell-product", o.product),
       el("td", "cell-tax", o.tax_label),
@@ -794,6 +805,8 @@ async function runSearch(opts) {
   if (data.warning) notice(box, "warn", data.warning);
   (data.failed || []).forEach((n) =>
     notice(box, "warn", "票源「" + n + "」暂不可用，已跳过（不影响其他票源）。"));
+  (data.unavailable_sources || []).forEach((u) =>
+    notice(box, "muted", "渠道「" + u.name + "」本次无销售：" + u.reason));
   renderSearch(out, data);
   if (!quiet) loadTrend(false);
 }
@@ -823,6 +836,13 @@ function dealCard(d) {
    ["下单方式", d.purchase], ["限制条件", d.note], ["更新时间", d.updated]]
     .forEach((kv) => { dl.append(el("dt", null, kv[0])); dl.append(el("dd", null, kv[1])); });
   c.append(dl);
+  if (d.entry_url) {
+    const link = el("a", "entry-link", d.entry_note || "前往渠道 ↗");
+    link.href = d.entry_url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    c.append(link);
+  }
   return c;
 }
 async function loadDeals() {

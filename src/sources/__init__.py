@@ -31,6 +31,7 @@ def source_by_id(source_id):
 
 
 def source_catalog():
-    """票源清单（id/显示名/一句话说明），供 /api/sources 与 CLI 提示使用。"""
-    return [{"id": s.source_id, "name": s.display_name, "description": s.tagline}
+    """票源清单（id/显示名/一句话说明/渠道入口），供 /api/sources 与 CLI 提示使用。"""
+    return [{"id": s.source_id, "name": s.display_name, "description": s.tagline,
+             "entry_url": s.entry_url, "entry_note": s.entry_note}
             for s in all_sources()]
