@@ -1,2 +1,4 @@
 alerts.json
 __pycache__/
+src/sources/amadeus_config.json
+src/sources/.amadeus_cache/

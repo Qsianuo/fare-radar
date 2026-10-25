@@ -502,9 +502,14 @@ class UncoveredRouteTest(unittest.TestCase):
 
 
 class SourceFamilyTest(unittest.TestCase):
-    """v1.5 渠道治理（ISSUE-012）：快照+真实商品为 active；编造渠道退场并显式声明。"""
+    """v1.5 渠道治理（ISSUE-012）+ v1.6 Amadeus 真实接口（ISSUE-013）。
 
-    FAMILY = [("snapshot_pack", "实测快照"), ("airline", "航司直连"), ("ota", "OTA 比价"),
+    快照+真实商品为 active；编造渠道退场并显式声明；Amadeus 未配 Key 时
+    not_available（原因不同于"无合规接口"——它是可接入但未配置）。
+    """
+
+    FAMILY = [("snapshot_pack", "实测快照"), ("amadeus", "Amadeus 真实接口"),
+              ("airline", "航司直连"), ("ota", "OTA 比价"),
               ("douyin_groupbuy", "抖音团购"), ("douyin_miniapp", "抖音小程序·春秋航空"),
               ("douyin_live", "抖音直播间")]
     NOT_AVAILABLE = ("airline", "ota", "douyin_live")
@@ -515,7 +520,10 @@ class SourceFamilyTest(unittest.TestCase):
         for entry in catalog:
             self.assertNotIn("模拟", entry["name"])
             self.assertTrue(entry["description"], "每个票源需有一句话说明")
-            if entry["id"] in self.NOT_AVAILABLE:
+            if entry["id"] == "amadeus":
+                self.assertEqual(entry["status"], "not_available")
+                self.assertIn("未配置 API Key", entry["reason"])
+            elif entry["id"] in self.NOT_AVAILABLE:
                 self.assertEqual(entry["status"], "not_available")
                 self.assertEqual(entry["reason"], "暂无合规公开接口，未接入")
             else:

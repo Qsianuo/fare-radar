@@ -9,6 +9,7 @@ not_available，不出数据行）。全部走本注册表，CLI 与网页共用
 
 from . import airlines, cities, fees, pricing, snapshot_pack
 from .airline import AirlineSource
+from .amadeus import AmadeusSource
 from .base import Source
 from .douyin_groupbuy import DouyinGroupbuySource
 from .douyin_live import DouyinLiveSource
@@ -21,8 +22,12 @@ __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
 
 
 def all_sources():
-    """返回全部已登记票源的新实例列表（注册顺序即展示顺序）。"""
-    return [SnapshotPackSource(), AirlineSource(), OtaSource(),
+    """返回全部已登记票源的新实例列表（注册顺序即展示顺序）。
+
+    AmadeusSource 为真实接口适配器（ISSUE-013）：未配置 Key 时 status=
+    not_available（不出数据行、如实声明"未配置"），配置后激活。
+    """
+    return [SnapshotPackSource(), AmadeusSource(), AirlineSource(), OtaSource(),
             DouyinGroupbuySource(), DouyinMiniappSource(), DouyinLiveSource()]
 
 
