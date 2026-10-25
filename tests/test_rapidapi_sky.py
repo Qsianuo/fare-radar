@@ -63,15 +63,16 @@ class _Resp:
 
 
 class _FakeOpener:
-    def __init__(self, fail_with=None):
+    def __init__(self, fail_with=None, payload=None):
         self.calls = []
         self.fail_with = fail_with
+        self.payload = _SEARCH if payload is None else payload
 
     def open(self, request, timeout=0):
         self.calls.append(request.full_url)
         if self.fail_with is not None:
             raise self.fail_with
-        return _Resp(_SEARCH)
+        return _Resp(self.payload)
 
 
 class RapidapiGoogleFlightsTest(unittest.TestCase):
@@ -217,6 +218,71 @@ class RapidapiGoogleFlightsTest(unittest.TestCase):
         self.assertEqual(pi["history"], [{"date": "2026-10-01", "price": 490},
                                          {"date": "2026-10-03", "price": 630}],
                          "无价格/脏数据的历史点丢弃，不编造")
+
+
+    # ---------- 响应体 status 校验与空结果缓存（v1.10.1，ISSUE-017） ----------
+
+    def _body(self, status, description="", flights=None, insights=None):
+        return {"status": status, "description": description,
+                "data": {"search": {"departure_id": "INC", "arrival_id": "CTU"},
+                         "google_flights_url": "https://www.google.com/travel/flights",
+                         "price_insights": insights or {},
+                         "best_flights": flights or [], "other_flights": []}}
+
+    def test_body_status_204_is_no_data_not_error(self):
+        """实测：上游用 HTTP 200 + body status 204 表达"provider 无数据"。"""
+        opener = _FakeOpener(payload=self._body(204, "No content!"))
+        source = self._source()
+        with self._patched(source, opener):
+            rows = source.search("INC", "CTU", DATE)
+        self.assertEqual(rows, [], "204 是无数据，不是异常")
+        note = source.empty_note("INC", "CTU", DATE)
+        self.assertIn("无该航线数据", note)
+        self.assertIn("204", note)
+
+    def test_body_status_429_is_raised_not_swallowed(self):
+        """HTTP 200 + body 429 必须抛出，不能被当成"无报价"。"""
+        opener = _FakeOpener(payload=self._body(429, "Too many requests"))
+        source = self._source()
+        with self._patched(source, opener):
+            with self.assertRaises(RuntimeError) as ctx:
+                source.search("INC", "CTU", DATE)
+        self.assertIn("429", str(ctx.exception))
+        self.assertIsNone(source.insights("INC", "CTU", DATE), "失败不落缓存")
+
+    def test_body_status_5xx_carries_description(self):
+        opener = _FakeOpener(payload=self._body(503, "provider down"))
+        source = self._source()
+        with self._patched(source, opener):
+            with self.assertRaises(RuntimeError) as ctx:
+                source.search("INC", "CTU", DATE)
+        self.assertIn("503", str(ctx.exception))
+        self.assertIn("provider down", str(ctx.exception))
+
+    def test_empty_result_uses_short_cache(self):
+        """空结果只缓存 30 分钟，有结果才 6 小时。"""
+        import time
+        opener = _FakeOpener(payload=self._body(204))
+        source = self._source()
+        with self._patched(source, opener):
+            source.search("INC", "CTU", DATE)
+        cached = source._cache_read(f"offers_INC_CTU_{DATE.isoformat()}.json")
+        self.assertLessEqual(cached["expire_at"] - time.time(), 31 * 60)
+        self.assertEqual(cached["body_status"], 204)
+
+        opener2 = _FakeOpener()
+        with self._patched(source, opener2):
+            source.search("SHA", "CAN", DATE)
+        cached2 = source._cache_read(f"offers_SHA_CAN_{DATE.isoformat()}.json")
+        self.assertGreater(cached2["expire_at"] - time.time(), 5 * 3600)
+
+    def test_empty_note_none_when_has_rows_or_no_cache(self):
+        source = self._source()
+        self.assertIsNone(source.empty_note("SHA", "CTU", DATE), "无缓存不猜原因")
+        opener = _FakeOpener()
+        with self._patched(source, opener):
+            source.search("SHA", "CAN", DATE)
+        self.assertIsNone(source.empty_note("SHA", "CAN", DATE), "有报价就不该有原因说明")
 
 
 if __name__ == "__main__":

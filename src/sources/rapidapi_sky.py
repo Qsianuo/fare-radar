@@ -29,6 +29,7 @@ CONFIG_NAME = "rapidapi_config.json"
 DAILY_CALL_CAP = 40           # 当日上限（100 次/月额度保护）
 MONTHLY_CALL_CAP = 90         # 当月上限（给失败重试留 10 次余量）
 OFFER_CACHE_TTL = 6 * 3600    # 同航线同日期结果缓存 6 小时
+EMPTY_CACHE_TTL = 30 * 60     # 空结果只缓存 30 分钟：上游无数据/瞬时故障不该锁死 6 小时
 TIMEOUT = 45
 DEFAULT_HOST = "google-flights-search-prices.p.rapidapi.com"
 SEARCH_PATH = "/v1/flights/search"
@@ -130,12 +131,25 @@ class RapidapiFlightSource(Source):
             else urllib.request.build_opener())
         try:
             with opener.open(request, timeout=TIMEOUT) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                body = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
                 raise RuntimeError("RapidAPI 返回 429（超出配额/限速），渠道已暂停——"
                                    "请到后台核对订阅配额，不要重试") from None
             raise RuntimeError(f"RapidAPI 接口返回 HTTP {exc.code}") from None
+        # 上游可能用 HTTP 200 + 响应体 status 表达错误（实测 204 = provider 无数据）。
+        # 不校验就会把配额/限速错误静默当成"无报价"，掩盖真实原因。
+        body_status = body.get("status")
+        if body_status is not None and body_status != 200:
+            desc = str(body.get("description") or "").strip()
+            if body_status == 204:
+                return body          # 语义明确的"上游无此航线数据"，由调用方记录
+            if body_status == 429:
+                raise RuntimeError("RapidAPI 返回 429（超出配额/限速），渠道已暂停——"
+                                   "请到后台核对订阅配额，不要重试") from None
+            raise RuntimeError(f"RapidAPI 接口返回 status {body_status}"
+                               + (f"：{desc}" if desc else "")) from None
+        return body
 
     # ---------- 映射 ----------
 
@@ -224,16 +238,34 @@ class RapidapiFlightSource(Source):
         if cached and time.time() < float(cached.get("expire_at", 0)):
             return cached["rows"]
         payload = self._fetch(origin, destination, date)
+        body_status = payload.get("status")
         data = payload.get("data") or {}
         rows = []
         for itinerary in ((data.get("best_flights") or []) + (data.get("other_flights") or []))[:8]:
             row = self._to_offer(itinerary)
             if row:
                 rows.append(row)
-        self._cache_write(key, {"expire_at": time.time() + OFFER_CACHE_TTL,
+        ttl = OFFER_CACHE_TTL if rows else EMPTY_CACHE_TTL
+        self._cache_write(key, {"expire_at": time.time() + ttl,
                                 "rows": rows,
+                                "body_status": body_status,
                                 "insights": self._to_insights(data.get("price_insights"))})
         return rows
+
+    def empty_note(self, origin, destination, date):
+        """空结果的原因说明（上游无此航线数据 / 其他异常状态）。
+
+        只读缓存，不回源；有报价或原因未知时返回 None——不替上游猜原因。
+        """
+        cached = self._cache_read(f"offers_{origin}_{destination}_{date.isoformat()}.json")
+        if not cached or cached.get("rows"):
+            return None
+        status = cached.get("body_status")
+        if status == 204:
+            return "上游 Google Flights 无该航线数据（status 204：No content）"
+        if status not in (None, 200):
+            return f"上游返回 status {status}"
+        return None
 
     def insights(self, origin, destination, date):
         """价格洞察：只读缓存，不回源（零额外配额；缓存缺失即 None）。"""

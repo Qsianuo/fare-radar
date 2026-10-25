@@ -174,14 +174,21 @@ def _api_search(params):
 
     empty_hint = None
     if not rows:
-        snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)
-        empty_hint = (_unknown_city_hint(origin, destination)
-                      or (f"该航线暂无真实数据快照；当前收录范围：{snapshot_pack.coverage_text()}。"
-                          if snapshot_selected
-                          and not snapshot_pack.is_covered(origin, destination, date)
-                          else ("本次查询所选渠道均无销售，原因见 unavailable_sources。"
-                                if unavailable else
-                                "该航线暂无可用报价（已登记票源见 /api/sources）。")))
+        notes = fr.empty_notes(sources, origin, destination, date)
+        if notes:
+            empty_hint = "；".join(notes) + "。可更换日期或航线再试。"
+        else:
+            snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)
+            hint_unknown = _unknown_city_hint(origin, destination)
+            if hint_unknown:
+                empty_hint = hint_unknown
+            elif snapshot_selected and not snapshot_pack.is_covered(origin, destination, date):
+                empty_hint = (f"该航线暂无真实数据快照；当前收录范围："
+                              f"{snapshot_pack.coverage_text()}。")
+            elif unavailable:
+                empty_hint = "本次查询所选渠道均无销售，原因见 unavailable_sources。"
+            else:
+                empty_hint = "该航线暂无可用报价（已登记票源见 /api/sources）。"
     price_insight = fr.price_insights(sources, origin, destination, date)
     return 200, {
         "ok": True,

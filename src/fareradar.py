@@ -298,6 +298,26 @@ def price_insights(sources, origin, destination, date):
     return None
 
 
+def empty_notes(sources, origin, destination, date):
+    """空结果的原因说明（三入口共用，只读票源已缓存的判定，不回源）。
+
+    用于区分"上游没有这条航线的数据"与"查询失败/配额受限"——笼统的
+    "暂无可用报价"会让用户误以为工具坏了。
+    """
+    notes = []
+    for source in sources:
+        reader = getattr(source, "empty_note", None)
+        if not callable(reader):
+            continue
+        try:
+            note = reader(origin, destination, date)
+        except Exception:
+            note = None
+        if note:
+            notes.append(f"{getattr(source, 'display_name', source.source_id)}：{note}")
+    return notes
+
+
 LEVEL_TEXT = {"low": "偏低", "typical": "正常价", "high": "偏高"}
 
 
@@ -474,8 +494,12 @@ def cmd_search(args):
         print(f"  {insight.get('basis', '')}；{insight.get('history_note', '')}")
     if not offers:
         unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
+        notes = empty_notes(sources, origin, destination, date)
         snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)
-        if unknown:
+        if notes:
+            print("；".join(notes))
+            print("可更换日期或航线再试。")
+        elif unknown:
             print(_unknown_city_text(unknown))
         elif snapshot_selected and not snapshot_pack.is_covered(origin, destination, date):
             print(f"该航线暂无真实数据快照；当前收录范围：{snapshot_pack.coverage_text()}。")
