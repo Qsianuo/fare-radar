@@ -513,7 +513,7 @@ class SourceFamilyTest(unittest.TestCase):
     not_available（原因不同于"无合规接口"——它是可接入但未配置）。
     """
 
-    FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI 实时比价"),
+    FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI·Google Flights"),
               ("amadeus", "Amadeus 真实接口"),
               ("airline", "航司直连"), ("ota", "OTA 比价"),
               ("douyin_groupbuy", "抖音团购"), ("douyin_miniapp", "抖音小程序·春秋航空"),

@@ -1,15 +1,17 @@
-"""RapidAPI「Flights Scraper Sky」真实接口适配器（ISSUE-013 后续，v1.7.0）。
+"""RapidAPI「Google Flights Search & Prices」真实接口适配器（v1.9.0）。
 
-数据链路：RapidAPI（订阅制，免费档 100 次/月）→ 上游 Skyscanner 抓取。
+数据链路：RapidAPI（订阅制免费档 100 次/月）→ Google Flights 真实报价。
 认证：请求头 X-RapidAPI-Key（配置于 rapidapi_config.json，已 gitignore）。
+查询：IATA 三字码直查（/v1/flights/search?departure_id&arrival_id&outbound_date），
+无需城市映射，任意 50 城组合均可按需获取真实航班。
 
-调用纪律（与 amadeus.py 同框架，使用者无需操心）：
-- 同 (航线, 日期) 查询结果缓存 30 分钟；城市 entityId 映射永久缓存；
-- 当日 API 调用自我上限 60 次（免费档月配额 100 次的 ~2/3 保护线）；
-- 单次请求超时 15 秒；429/上游 503 即时上抛中文说明，不自动重试。
+调用纪律（内置，使用者无需操心）：
+- 同 (航线, 日期) 结果缓存 6 小时（价格日级波动，长缓存保护配额）；
+- 当日调用上限 40 次 + 当月上限 90 次（月配额 100 的保护线）；
+- 单次超时 45 秒（首查偏慢）；429 即停中文提示，不自动重试。
 
-诚实披露：上游为抓取型数据源，可能 503 波动或字段缺失——缺失字段按
-"未披露"兜底，上游不可用时渠道降级（failed），不编造。
+诚实披露：价格为 Google Flights 含税口径（未拆分机建/燃油明细）；上游波动时
+渠道如实降级，不编造；无价格行程丢弃。
 """
 
 import datetime as dt
@@ -21,27 +23,29 @@ import urllib.request
 from pathlib import Path
 
 from .base import Source
-from . import airlines, cities
+from . import airlines
 
 CONFIG_NAME = "rapidapi_config.json"
-DAILY_CALL_CAP = 60           # 当日自我上限（保护免费档月配额 100 次）
-OFFER_CACHE_TTL = 30 * 60     # 同航线同日期结果缓存 30 分钟
-TIMEOUT = 15
-BASE = "https://{host}{path}"
+DAILY_CALL_CAP = 40           # 当日上限（100 次/月额度保护）
+MONTHLY_CALL_CAP = 90         # 当月上限（给失败重试留 10 次余量）
+OFFER_CACHE_TTL = 6 * 3600    # 同航线同日期结果缓存 6 小时
+TIMEOUT = 45
+DEFAULT_HOST = "google-flights-search-prices.p.rapidapi.com"
+SEARCH_PATH = "/v1/flights/search"
 
-_NO_KEY_REASON = ("未配置 API Key——在 rapidapi.com 订阅 Flights Scraper Sky 免费档后，"
+_NO_KEY_REASON = ("未配置 API Key——在 rapidapi.com 订阅 Google Flights Search 免费档后，"
                   "于开发者后台 default-application 复制 X-RapidAPI-Key 到 rapidapi_config.json")
 
 
 class RapidapiFlightSource(Source):
-    """真实接口票源：RapidAPI Flights Scraper Sky（上游 Skyscanner）。"""
+    """真实接口票源：RapidAPI · Google Flights Search & Prices。"""
 
     source_id = "rapidapi_sky"
-    display_name = "RapidAPI 实时比价"
-    tagline = ("RapidAPI 订阅接口（上游 Skyscanner），真实报价；免费档配额有限，"
-               "上游可能波动，不可用时如实降级")
-    entry_url = "https://rapidapi.com/ntd119/api/flights-sky"
-    entry_note = "RapidAPI·Flights Scraper Sky（订阅制，Key 自配）"
+    display_name = "RapidAPI·Google Flights"
+    tagline = ("Google Flights 真实报价（RapidAPI 订阅，免费档配额有限），"
+               "任意城市按需查询；价格为含税口径，结果缓存 6 小时")
+    entry_url = "https://rapidapi.com/letsscrape/api/google-flights-search-prices"
+    entry_note = "RapidAPI·Google Flights Search（订阅制，Key 自配）"
 
     def __init__(self, config_path=None):
         self._config_path = (Path(config_path) if config_path
@@ -86,27 +90,40 @@ class RapidapiFlightSource(Source):
         (self._cache_dir / name).write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-    def _daily_guard(self):
+    def _quota_guard(self):
         today = dt.date.today().isoformat()
-        counter = self._cache_read("day_counter.json") or {"date": today, "calls": 0}
-        if counter.get("date") != today:
-            counter = {"date": today, "calls": 0}
-        if counter["calls"] >= DAILY_CALL_CAP:
-            raise RuntimeError(f"RapidAPI 当日调用已达自我上限 {DAILY_CALL_CAP} 次"
-                               "（保护免费档月配额），今日不再请求；缓存仍可用")
-        counter["calls"] += 1
-        self._cache_write("day_counter.json", counter)
+        month = today[:7]
+        day_counter = self._cache_read("day_counter.json") or {"date": today, "calls": 0}
+        if day_counter.get("date") != today:
+            day_counter = {"date": today, "calls": 0}
+        month_counter = self._cache_read("month_counter.json") or {"month": month, "calls": 0}
+        if month_counter.get("month") != month:
+            month_counter = {"month": month, "calls": 0}
+        if month_counter["calls"] >= MONTHLY_CALL_CAP:
+            raise RuntimeError(f"RapidAPI 当月调用已达自我上限 {MONTHLY_CALL_CAP} 次"
+                               "（月配额 100 的保护线），本月不再请求；缓存仍可用")
+        if day_counter["calls"] >= DAILY_CALL_CAP:
+            raise RuntimeError(f"RapidAPI 当日调用已达自我上限 {DAILY_CALL_CAP} 次，"
+                               "今日不再请求；缓存仍可用，明日恢复")
+        day_counter["calls"] += 1
+        month_counter["calls"] += 1
+        self._cache_write("day_counter.json", day_counter)
+        self._cache_write("month_counter.json", month_counter)
 
     # ---------- HTTP ----------
 
-    def _get(self, path, params):
-        self._daily_guard()
-        host = self._config.get("host", "flights-sky.p.rapidapi.com")
-        query = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+    def _fetch(self, origin, destination, date):
+        self._quota_guard()
+        host = self._config.get("host", DEFAULT_HOST)
+        query = urllib.parse.urlencode({
+            "departure_id": origin, "arrival_id": destination,
+            "outbound_date": date.isoformat(), "currency": "CNY"})
         request = urllib.request.Request(
-            BASE.format(host=host, path=path) + (f"?{query}" if query else ""),
+            f"https://{host}{SEARCH_PATH}?{query}",
             headers={"X-RapidAPI-Key": self._config["api_key"],
-                     "X-RapidAPI-Host": host})
+                     "X-RapidAPI-Host": host,
+                     # 前置 WAF 拦截默认 Python UA（实测 403），声明可溯源客户端
+                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FareRadar/1.9"})
         proxy = str(self._config.get("proxy") or "").strip()
         opener = (urllib.request.build_opener(urllib.request.ProxyHandler(
             {"http": proxy, "https": proxy})) if proxy
@@ -120,73 +137,52 @@ class RapidapiFlightSource(Source):
                                    "请到后台核对订阅配额，不要重试") from None
             raise RuntimeError(f"RapidAPI 接口返回 HTTP {exc.code}") from None
 
-    # ---------- 城市映射（IATA → Skyscanner entityId） ----------
-
-    def _entity_id(self, iata):
-        """auto-complete 查询并永久缓存 IATA→entityId（Skyscanner 体系）。"""
-        cached = self._cache_read("entities.json") or {}
-        if iata in cached:
-            return cached[iata]
-        payload = self._get("/web/flights/auto-complete", {"query": iata})
-        for item in (payload.get("data") or []):
-            if item.get("iata") == iata or (item.get("navigation") or {}) \
-                    .get("entityId", "").endswith(iata):
-                cached[iata] = item["navigation"]["entityId"]
-                self._cache_write("entities.json", cached)
-                return cached[iata]
-        # 兜底：取第一条 entityId
-        data = payload.get("data") or []
-        if data and (data[0].get("navigation") or {}).get("entityId"):
-            cached[iata] = data[0]["navigation"]["entityId"]
-            self._cache_write("entities.json", cached)
-            return cached[iata]
-        raise RuntimeError(f"RapidAPI 未找到城市 {iata} 的 entityId（上游可能波动）")
-
-    # ---------- 映射与查询 ----------
+    # ---------- 映射 ----------
 
     @staticmethod
-    def _iso_hhmm(value):
-        try:
-            return value[11:16]
-        except (TypeError, IndexError):
-            return "未披露"
+    def _hhmm(iso_time):
+        return (iso_time or "")[11:16] or "未披露"
 
-    def _to_offer(self, itinerary, leg):
-        segments = leg.get("segments") or [{}]
-        first, last = segments[0], segments[-1]
-        flight_no = "|".join(
-            f"{s.get('marketingCarrier', {}).get('alternateId', '') or '?'}"
-            f"{s.get('flightNumber', '') or '??'}" for s in segments)
-        carrier_code = first.get("marketingCarrier", {}).get("alternateId", "") or "XX"
-        price_items = itinerary.get("pricingOptions") or [{}]
-        price = price_items[0].get("price", {}).get("amount")
-        price = round(float(price)) if price is not None else None
-        if price is None:
-            return None  # 无价格的行程不编造，直接丢弃
-        dep_airport = first.get("origin", {}).get("displayCode", "") or ""
-        arr_airport = last.get("destination", {}).get("displayCode", "") or ""
-        dep_time = (first.get("departure") or "")[:16]
-        arr_time = (last.get("arrival") or "")[:16]
-        duration = leg.get("durationInMinutes")
+    def _to_offer(self, itinerary):
+        legs = itinerary.get("legs") or []
+        if not legs:
+            return None
+        price = itinerary.get("price")
+        if not isinstance(price, (int, float)):
+            return None  # 无价格不编造
+        price = round(price)
+        first, last = legs[0], legs[-1]
+        flight_no = "/".join(
+            str(leg.get("flight_number", "")).replace(" ", "") for leg in legs)
+        code = first.get("airline_code", "") or "XX"
+        carrier = airlines.carrier_name(code) or str(first.get("airline") or code)
+        dep = first.get("departure_airport") or {}
+        arr = last.get("arrival_airport") or {}
+        total_min = itinerary.get("total_duration")
+        stops = itinerary.get("stops", len(legs) - 1)
         return {
             "source_id": self.source_id, "source_name": self.display_name,
-            "product": ("直飞" if len(segments) == 1 else f"中转｜{len(segments) - 1} 段")
-                       + "｜" + (airlines.carrier_name(carrier_code)),
+            "product": ("直飞" if stops == 0 else f"中转{stops}站")
+                       + "｜" + carrier
+                       + (f"｜{first.get('airplane')}" if first.get("airplane") else ""),
             "flight_no": flight_no,
-            "carrier_code": carrier_code,
-            "carrier_name": airlines.carrier_name(carrier_code),
-            "depart_time": self._iso_hhmm(dep_time),
-            "arrive_time": self._iso_hhmm(arr_time),
-            "cross_day": bool(dep_time and arr_time and arr_time[:10] > dep_time[:10]),
-            "duration_text": (f"{int(duration) // 60}小时{int(duration) % 60:02d}分"
-                              if isinstance(duration, (int, float)) else "未披露"),
-            "dep_airport": cities.airport_name(dep_airport) if dep_airport else "未披露",
-            "arr_airport": cities.airport_name(arr_airport) if arr_airport else "未披露",
+            "carrier_code": code,
+            "carrier_name": carrier,
+            "depart_time": self._hhmm(dep.get("time")),
+            "arrive_time": self._hhmm(arr.get("time")),
+            "cross_day": bool(first.get("overnight")) or (
+                self._hhmm(arr.get("time")) < self._hhmm(dep.get("time"))
+                and len(str(arr.get("time", ""))) > 10),
+            "duration_text": (f"{total_min // 60}小时{total_min % 60:02d}分"
+                              if isinstance(total_min, int) else "未披露"),
+            # 机场名用上游真实英文全称（比本地注册表更权威）
+            "dep_airport": f"{dep.get('name', '未披露')}（{dep.get('code', '')}）",
+            "arr_airport": f"{arr.get('name', '未披露')}（{arr.get('code', '')}）",
             "price": price, "tax_included": True, "is_deal": False,
             "fee_breakdown": {"airport_fee": None, "fuel_fee": None, "tax_included": True,
-                              "included_desc": "上游报价（Skyscanner 口径，未拆分机建/燃油）"},
+                              "included_desc": "Google Flights 含税总价（未拆分机建/燃油）"},
             "total_estimate": price,
-            "note": "真实接口·RapidAPI（上游 Skyscanner，价格币种/口径以下单页为准）",
+            "note": "真实接口·Google Flights（价格缓存 6 小时，下单以官方渠道为准）",
         }
 
     def search(self, origin, destination, date):
@@ -197,15 +193,11 @@ class RapidapiFlightSource(Source):
         cached = self._cache_read(key)
         if cached and time.time() < float(cached.get("expire_at", 0)):
             return cached["rows"]
-        payload = self._get("/web/flights/search-one-way", {
-            "fromEntityId": self._entity_id(origin),
-            "toEntityId": self._entity_id(destination),
-            "departDate": date.isoformat(), "currency": "CNY",
-            "market": "zh-CN", "locale": "zh-CN"})
+        payload = self._fetch(origin, destination, date)
+        data = payload.get("data") or {}
         rows = []
-        for itinerary in (payload.get("data", {}).get("itineraries") or [])[:8]:
-            leg = ((itinerary.get("legs") or [{}])[0])
-            row = self._to_offer(itinerary, leg)
+        for itinerary in ((data.get("best_flights") or []) + (data.get("other_flights") or []))[:8]:
+            row = self._to_offer(itinerary)
             if row:
                 rows.append(row)
         self._cache_write(key, {"expire_at": time.time() + OFFER_CACHE_TTL, "rows": rows})
