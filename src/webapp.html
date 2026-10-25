@@ -154,6 +154,18 @@ input[type=number]{width:140px}
 .chart-empty{margin:0;padding:30px 0;text-align:center;font-size:13px;color:var(--muted)}
 .chart-error{color:var(--bad)}
 
+/* ================= 行情参考（上游 price_insights；无数据整块隐藏） ================= */
+.insight{margin-top:12px;padding:12px 14px;background:var(--surface-2);
+  border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:var(--r-s)}
+.insight-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.insight-tag{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--brand-soft);color:var(--brand)}
+.insight-tag.up{background:var(--warn-soft);color:var(--warn)}
+.insight-title{font-size:13px;font-weight:700;color:var(--ink-2)}
+.insight-line{margin:6px 0 0;font-size:13px;color:var(--ink-2);line-height:1.6;
+  font-variant-numeric:tabular-nums}
+.insight-note{margin:4px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
+
 /* ================= 卡提示（次卡/省钱卡，不计入比价） ================= */
 .card-hints{margin:14px 0;background:linear-gradient(180deg,#fffdf6,#ffffff);
   border:1px solid var(--gold-line);border-radius:var(--r-m);box-shadow:var(--sh-1);padding:16px 18px}
@@ -383,6 +395,14 @@ footer p{margin:4px 0 0}
       </div>
       <div class="nearby-box" id="nearby-bar"></div>
       <p class="chart-notice" id="nearby-notice"></p>
+      <div class="insight" id="insight-box" hidden>
+        <div class="insight-head">
+          <span class="insight-tag" id="insight-tag"></span>
+          <span class="insight-title" id="insight-title">行情参考</span>
+        </div>
+        <p class="insight-line" id="insight-line"></p>
+        <p class="insight-note" id="insight-note"></p>
+      </div>
     </div>
 
     <form id="search-form" class="toolbar">
@@ -606,6 +626,33 @@ async function loadNearby() {
     box.innerHTML = "";
     box.append(el("p", "chart-empty chart-error", "临近日期数据加载失败：" + err.message));
   }
+}
+
+/* ---------------- 行情参考（上游 price_insights，无数据即隐藏） ---------------- */
+const INSIGHT_LEVEL = { low: "偏低", typical: "正常价", high: "偏高" };
+function renderInsights(data) {
+  const box = $("insight-box");
+  const pi = data.price_insights;
+  if (!pi) { box.hidden = true; return; }          // 无数据就整块不出现，绝不推算
+  const tag = $("insight-tag");
+  const level = INSIGHT_LEVEL[pi.price_level] || "";
+  tag.className = "insight-tag" + (pi.price_level === "high" ? " up" : "");
+  tag.hidden = !level;
+  tag.textContent = level;
+  $("insight-title").textContent =
+    "行情参考" + (pi.source_name ? "（" + pi.source_name + "）" : "");
+  const parts = [];
+  if (pi.lowest_price != null) parts.push("本次最低 ¥" + pi.lowest_price);
+  const rng = pi.typical_price_range;
+  if (rng && rng.length === 2) parts.push("常规区间 ¥" + rng[0] + "–¥" + rng[1]);
+  const hist = pi.history || [];
+  if (hist.length) {
+    const ps = hist.map((x) => x.price);
+    parts.push("近 " + ps.length + " 天 ¥" + Math.min(...ps) + "–¥" + Math.max(...ps) + "（抽样值）");
+  }
+  $("insight-line").textContent = parts.join("｜");
+  $("insight-note").textContent = [pi.basis, pi.history_note].filter(Boolean).join("；");
+  box.hidden = false;
 }
 
 /* ---------------- 搜索比价 ---------------- */
@@ -836,6 +883,7 @@ async function runSearch() {
   });
   renderSearch(out, data);
   setGauge(data);
+  renderInsights(data);
   loadNearby();
 }
 $("search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(); });

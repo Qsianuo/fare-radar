@@ -182,6 +182,7 @@ def _api_search(params):
                           else ("本次查询所选渠道均无销售，原因见 unavailable_sources。"
                                 if unavailable else
                                 "该航线暂无可用报价（已登记票源见 /api/sources）。")))
+    price_insight = fr.price_insights(sources, origin, destination, date)
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
@@ -194,6 +195,7 @@ def _api_search(params):
         "sources_status": [{"id": s["id"], "name": s["name"], "status": s["status"],
                             "reason": s["reason"]} for s in source_catalog()],
         "card_hints": hints,                 # 命中的次卡/省钱卡（不计入 offers）
+        "price_insights": price_insight,     # 上游行情参考（无则 null，绝不推算）
         "offers": rows,
         "alert_hit": alert_hit,
         "warning": warning,
