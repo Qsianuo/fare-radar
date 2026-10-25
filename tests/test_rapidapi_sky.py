@@ -285,5 +285,17 @@ class RapidapiGoogleFlightsTest(unittest.TestCase):
         self.assertIsNone(source.empty_note("SHA", "CAN", DATE), "有报价就不该有原因说明")
 
 
+    def test_body_status_200_empty_differs_from_204(self):
+        """200 + 0 条 ≠ 204：前者是"查询成功但无可售行程"，必须与"无此航线"区分。"""
+        opener = _FakeOpener(payload=self._body(200, "OK"))
+        source = self._source()
+        with self._patched(source, opener):
+            rows = source.search("INC", "PEK", DATE)
+        self.assertEqual(rows, [])
+        note = source.empty_note("INC", "PEK", DATE)
+        self.assertIn("未返回可售行程", note)
+        self.assertNotIn("204", note)
+
+
 if __name__ == "__main__":
     unittest.main()

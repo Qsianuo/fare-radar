@@ -263,6 +263,10 @@ class RapidapiFlightSource(Source):
         status = cached.get("body_status")
         if status == 204:
             return "上游 Google Flights 无该航线数据（status 204：No content）"
+        if status == 200:
+            # 与 204 语义不同：查询本身成功，只是没返回可售行程
+            # （航线真实存在但上游无可售报价，或该日期尚无排班）
+            return "上游查询成功但未返回可售行程（可能有航班但无可售报价，或该日期尚无排班）"
         if status not in (None, 200):
             return f"上游返回 status {status}"
         return None
