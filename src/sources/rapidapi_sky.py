@@ -185,6 +185,36 @@ class RapidapiFlightSource(Source):
             "note": "真实接口·Google Flights（价格缓存 6 小时，下单以官方渠道为准）",
         }
 
+    def _to_insights(self, raw):
+        """price_insights → 精简结构。零编造：无可用字段即返回 None，不猜。"""
+        if not isinstance(raw, dict):
+            return None
+        lowest = raw.get("lowest_price")
+        lowest = round(lowest) if isinstance(lowest, (int, float)) else None
+        rng = raw.get("typical_price_range")
+        rng = ([round(x) for x in rng]
+               if isinstance(rng, list) and len(rng) == 2
+               and all(isinstance(x, (int, float)) for x in rng) else None)
+        level = raw.get("price_level")
+        level = level.strip() if isinstance(level, str) and level.strip() else None
+        history = [{"date": h["date"], "price": round(h["price"])}
+                   for h in (raw.get("price_history") or [])
+                   if isinstance(h, dict) and isinstance(h.get("price"), (int, float))
+                   and h.get("date")]
+        if lowest is None and rng is None:
+            return None          # 连最低价和区间都没有，就没有可展示的内容
+        return {
+            "source_id": self.source_id,
+            "source_name": self.display_name,
+            "currency": str(raw.get("currency") or "CNY"),
+            "lowest_price": lowest,
+            "price_level": level,
+            "typical_price_range": rng,
+            "history": history,
+            "basis": "Google Flights 含税总价（未拆分机建/燃油），与本渠道到手价同口径",
+            "history_note": "上游为抽样价位（非逐日真实报价），仅作趋势参考",
+        }
+
     def search(self, origin, destination, date):
         available, _ = self.availability(origin, destination, date)
         if not available:
@@ -200,5 +230,15 @@ class RapidapiFlightSource(Source):
             row = self._to_offer(itinerary)
             if row:
                 rows.append(row)
-        self._cache_write(key, {"expire_at": time.time() + OFFER_CACHE_TTL, "rows": rows})
+        self._cache_write(key, {"expire_at": time.time() + OFFER_CACHE_TTL,
+                                "rows": rows,
+                                "insights": self._to_insights(data.get("price_insights"))})
         return rows
+
+    def insights(self, origin, destination, date):
+        """价格洞察：只读缓存，不回源（零额外配额；缓存缺失即 None）。"""
+        cached = self._cache_read(f"offers_{origin}_{destination}_{date.isoformat()}.json")
+        if not cached:
+            return None
+        found = cached.get("insights")     # v1.9 及更早的缓存没有该字段 → None
+        return found if isinstance(found, dict) else None

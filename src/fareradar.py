@@ -278,6 +278,47 @@ def lowest_eligible(offers, date):
     return (min(eligible, key=total_price) if eligible else None)
 
 
+def price_insights(sources, origin, destination, date):
+    """价格行情参考（当前由 RapidAPI·Google Flights 渠道提供）。
+
+    只读各票源**已缓存**的洞察，不回源（零额外配额）；没有就返回 None——
+    零编造：不推算、不拿历史价格凑一个"贵/便宜"的判断。网页/CLI/MCP 共用本函数，
+    保证三入口同源。
+    """
+    for source in sources:
+        reader = getattr(source, "insights", None)
+        if not callable(reader):
+            continue
+        try:
+            found = reader(origin, destination, date)
+        except Exception:          # 单渠道异常不影响比价主流程
+            found = None
+        if found:
+            return found
+    return None
+
+
+LEVEL_TEXT = {"low": "偏低", "typical": "正常价", "high": "偏高"}
+
+
+def insight_text(insight, sep="｜"):
+    """行情参考的一句话渲染（三入口共用词表；无数据的项不出现）。"""
+    parts = [f"行情参考（{insight.get('source_name') or '上游'} 口径）"]
+    level = LEVEL_TEXT.get(insight.get("price_level") or "")
+    if level:
+        parts.append(level)
+    if insight.get("lowest_price") is not None:
+        parts.append(f"本次最低 ¥{insight['lowest_price']}")
+    rng = insight.get("typical_price_range")
+    if rng:
+        parts.append(f"常规区间 ¥{rng[0]}–{rng[1]}")
+    history = insight.get("history") or []
+    if history:
+        prices = [h["price"] for h in history]
+        parts.append(f"近 {len(prices)} 天 ¥{min(prices)}–{max(prices)}（抽样）")
+    return sep.join(parts)
+
+
 def risk_flags(offer, date):
     """行内风险标记（结构化，PRD v1.3：网页与 CLI 同词表渲染）。
 
@@ -427,6 +468,10 @@ def cmd_search(args):
     if nearby:
         bar = "｜".join(f"{point['label']} ¥{point['price']}" for point in nearby)
         print(f"临近日期最低价（裸价，来源：{snapshot_pack.DATA_SOURCE}）：{bar}")
+    insight = price_insights(sources, origin, destination, date)
+    if insight:
+        print(insight_text(insight))
+        print(f"  {insight.get('basis', '')}；{insight.get('history_note', '')}")
     if not offers:
         unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
         snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)

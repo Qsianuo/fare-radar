@@ -160,5 +160,64 @@ class RapidapiGoogleFlightsTest(unittest.TestCase):
         self.assertEqual(len(opener.calls), 1, "429 后不得重试")
 
 
+    # ---------- 价格洞察 price_insights（v1.10.0） ----------
+
+    def test_insights_captured_and_cached(self):
+        """price_insights 随比价结果一并落缓存；未提供的字段不猜。"""
+        opener = _FakeOpener()
+        source = self._source()
+        with self._patched(source, opener):
+            source.search("SHA", "CAN", DATE)
+        pi = source.insights("SHA", "CAN", DATE)
+        self.assertIsNotNone(pi)
+        self.assertEqual(pi["lowest_price"], 400)
+        self.assertEqual(pi["typical_price_range"], [440, 680])
+        self.assertEqual(pi["currency"], "CNY")
+        self.assertIsNone(pi["price_level"], "样本无 price_level → 不得编造等级")
+        self.assertEqual(pi["history"], [])
+        self.assertEqual(pi["source_id"], "rapidapi_sky")
+        self.assertIn("同口径", pi["basis"])
+
+    def test_insights_cache_only_never_calls_api(self):
+        """缓存缺失时返回 None，绝不为了行情额外烧配额。"""
+        source = self._source()
+        opener = _FakeOpener()
+        with self._patched(source, opener):
+            self.assertIsNone(source.insights("SHA", "CTU", DATE))
+        self.assertEqual(opener.calls, [], "insights() 不得发起任何请求")
+
+    def test_insights_old_cache_without_field(self):
+        """v1.9 及更早的缓存没有 insights 字段 → 优雅返回 None。"""
+        source = self._source()
+        source._cache_dir.mkdir()
+        source._cache_write(f"offers_SHA_CAN_{DATE.isoformat()}.json",
+                            {"expire_at": 9e18, "rows": []})
+        self.assertIsNone(source.insights("SHA", "CAN", DATE))
+
+    def test_insights_empty_payload_returns_none(self):
+        """零编造：没有最低价也没有常规区间，就没有可展示的内容。"""
+        source = self._source()
+        self.assertIsNone(source._to_insights(None))
+        self.assertIsNone(source._to_insights({}))
+        self.assertIsNone(source._to_insights({"price_level": "low"}))
+        # 只有区间没有最低价：仍是可用信息，保留
+        only_range = source._to_insights({"typical_price_range": [440, 680]})
+        self.assertIsNotNone(only_range)
+        self.assertIsNone(only_range["lowest_price"])
+
+    def test_insights_unknown_level_survives(self):
+        """未知 price_level 值原样保留，渲染层不猜中文（前端映射不到就不显示）。"""
+        source = self._source()
+        pi = source._to_insights({"lowest_price": 630, "price_level": "weird",
+                                 "typical_price_range": [440, 680],
+                                 "price_history": [{"date": "2026-10-01", "price": 490},
+                                                   {"date": "2026-10-02", "price": "bad"},
+                                                   {"date": "2026-10-03", "price": 630.4}]})
+        self.assertEqual(pi["price_level"], "weird")
+        self.assertEqual(pi["history"], [{"date": "2026-10-01", "price": 490},
+                                         {"date": "2026-10-03", "price": 630}],
+                         "无价格/脏数据的历史点丢弃，不编造")
+
+
 if __name__ == "__main__":
     unittest.main()

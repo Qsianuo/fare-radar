@@ -90,6 +90,8 @@ def _fmt_search(params):
     lines = [payload.get("notice") or "[演示数据] 以下价格含演示快照与真实接口数据，不能用于实际购票。",
              f"航线：{payload['route']} ｜ {payload['date']}（{payload.get('weekday', '')}）"]
     offers = payload.get("offers") or []
+    if payload.get("price_insights"):
+        lines.append(fr.insight_text(payload["price_insights"]))
     for i, o in enumerate(offers):
         mark = "◀最低价" if o.get("is_lowest") else ""
         flags = "、".join(o.get("risk_flags") or [])
