@@ -1,0 +1,5 @@
+{
+  "_说明": "复制为 variflight_config.json 后填入 api_key（该文件已 gitignore，不会入库）",
+  "api_key": "",
+  "endpoint": "https://ai.variflight.com/servers/aviation/mcp"
+}

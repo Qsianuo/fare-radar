@@ -514,12 +514,14 @@ class SourceFamilyTest(unittest.TestCase):
     """
 
     FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI·Google Flights"),
+              ("variflight", "飞常准·Aviation MCP"),
               ("amadeus", "Amadeus 真实接口"),
               ("airline", "航司直连"), ("ota", "OTA 比价"),
               ("douyin_groupbuy", "抖音团购"), ("douyin_miniapp", "抖音小程序·春秋航空"),
               ("douyin_live", "抖音直播间")]
     NOT_AVAILABLE = ("airline", "ota", "douyin_live")
-    CONFIG_GATED = ("amadeus", "rapidapi_sky")  # 有 Key=active，无 Key=not_available
+    # 有 Key=active，无 Key=not_available（v1.11 起 variflight 亦属配置门控）
+    CONFIG_GATED = ("amadeus", "rapidapi_sky", "variflight")
 
     def test_catalog_matches_v15(self):
         catalog = source_catalog()

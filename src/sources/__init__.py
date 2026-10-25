@@ -17,6 +17,7 @@ from .douyin_miniapp import DouyinMiniappSource
 from .ota import OtaSource
 from .rapidapi_sky import RapidapiFlightSource
 from .snapshot_pack import SnapshotPackSource
+from .variflight import VariflightSource
 
 __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
            "all_sources", "source_by_id", "source_catalog"]
@@ -26,10 +27,11 @@ def all_sources():
     """返回全部已登记票源的新实例列表（注册顺序即展示顺序）。
 
     真实接口适配器（均默认关闭/按配置激活）：AmadeusSource（自助门户已下线，
-    仅存量企业 Key 可用）、RapidapiFlightSource（v1.7，免费档订阅）。
+    仅存量企业 Key 可用）、RapidapiFlightSource（v1.7，免费档订阅）、
+    VariflightSource（v1.11 骨架，国内航班与票价；schema 待校准，未校准前不出数据）。
     未配置 Key 时 status=not_available，不出数据行、如实声明。
     """
-    return [SnapshotPackSource(), RapidapiFlightSource(), AmadeusSource(),
+    return [SnapshotPackSource(), RapidapiFlightSource(), VariflightSource(), AmadeusSource(),
             AirlineSource(), OtaSource(),
             DouyinGroupbuySource(), DouyinMiniappSource(), DouyinLiveSource()]
 
