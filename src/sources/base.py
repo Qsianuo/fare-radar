@@ -14,7 +14,22 @@ v1.4 起票源分两类产品（PRD 第 7 节）：
 渠道状态（v1.5.0，ISSUE-012 修复裁定）：status="not_available" 的渠道是
 "暂无合规公开接口，未接入"的渠道概念保留但不出任何数据行（不假装接入、
 不编造）；比价行仅允许来自实测快照（snapshot_pack）与真实商品（特价票/卡）。
+
+测试离线开关（v1.11.0，ISSUE-019）：设置环境变量 FARE_RADAR_OFFLINE=1 后，
+所有联网票源一律 not_available 且不发起任何真实请求。之所以需要它——测试里
+patch 模块常量只能覆盖当前进程，**子进程（如 MCP stdio 集成测试）拿不到 patch**，
+曾真实调用付费接口并扣费。
 """
+
+import os as _os
+
+OFFLINE_ENV = "FARE_RADAR_OFFLINE"
+OFFLINE_REASON = "测试离线模式（FARE_RADAR_OFFLINE=1）：不发起任何真实请求"
+
+
+def offline_mode():
+    """测试离线开关是否开启（所有联网票源必须据此短路）。"""
+    return _os.environ.get(OFFLINE_ENV) == "1"
 
 
 class Source:

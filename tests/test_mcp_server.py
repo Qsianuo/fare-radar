@@ -17,7 +17,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 # 测试一律离线：网络票源视为未配置（同其他测试模块的注入方式）
 import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
-_am.CONFIG_NAME = _rp.CONFIG_NAME = "_test_offline_absent.json"
+import sources.variflight as _vf  # noqa: E402
+_am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
 
 import mcp_server  # noqa: E402
 
@@ -116,6 +117,7 @@ class StdioIntegrationTest(unittest.TestCase):
     def test_stdio_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = dict(os.environ, FARE_RADAR_ALERTS=str(Path(tmp) / "alerts.json"),
+                       FARE_RADAR_OFFLINE="1",   # 子进程拿不到 monkeypatch，必须显式传
                        PYTHONIOENCODING="utf-8")
             proc = subprocess.run(
                 [sys.executable, str(ROOT / "src" / "mcp_server.py")],

@@ -16,11 +16,13 @@ INC→WUH 均无数据；飞常准官方开放平台覆盖国内 99.99% 航班�
 - 结果缓存 6 小时、空结果 30 分钟（docs/03 第 9 节通用约定）；
 - 未配 Key 或 schema 未校准时 status=not_available，不出数据行、不编造。
 
-⚠ 当前状态：**工具 schema 待校准**。飞常准未公开 tools 列表与参数名，需用 API Key 执行
-一次 `tools/list`（免费）后，把结果填进 PRICING_TOOL_CALL 与 `_to_offers()`，再置
-SCHEMA_CALIBRATED = True。在此之前 search() 不发起任何联网调用。
+schema 状态：**已于 2026-10-25 通过 `tools/list` 实测校准**（免费调用）。票价工具
+`getFlightPriceByCities(dep_city, arr_city, dep_date)` 返回逐航班、逐舱位的结构化价格；
+上游把 dict 以 Python 字面量包在文本里（"Flight prices: {...}"），故用 ast.literal_eval 解析。
+时间戳为"北京时间的 epoch"，显式 +8 小时换算，避免宿主时区漂移。
 """
 
+import ast
 import datetime as dt
 import json
 import time
@@ -28,7 +30,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .base import Source
+from .base import Source, offline_mode, OFFLINE_REASON
+from . import airlines
 
 CONFIG_NAME = "variflight_config.json"
 DEFAULT_ENDPOINT = "https://ai.variflight.com/servers/aviation/mcp"
@@ -41,10 +44,24 @@ OFFER_CACHE_TTL = 6 * 3600
 EMPTY_CACHE_TTL = 30 * 60
 TIMEOUT = 45
 
-# ---- 待校准区（拿到 API Key 后执行 probe_tools() 补齐） ----
-SCHEMA_CALIBRATED = False
-PRICING_TOOL_NAME = None       # 例如 "search_flight_itinerary_and_pricing"
-PRICING_TOOL_ARGS = None       # 参数名映射，例如 {"from": "departure", "to": "arrival", "date": "date"}
+# ---- 工具 schema（2026-10-25 通过 tools/list 实测校准，免费调用） ----
+SCHEMA_CALIBRATED = True
+PRICING_TOOL_NAME = "getFlightPriceByCities"
+PRICING_TOOL_ARGS = {"from": "dep_city", "to": "arr_city", "date": "dep_date"}
+_MAX_ROWS = 20
+
+_HONESTY_NOTE = ("真实接口·飞常准（票价是否含税上游未明示，到手价按全站口径加机建+燃油估算；"
+                 "以下单页为准）")
+
+# 补充承运人中文名：v1.4 的 6 航司名册是"生成器"用的，不覆盖全部真实航司。
+# 未收录的代码宁可留空（只显示航班号），也不拿二字码冒充中文名（flight_display
+# 会把 carrier_name 与 flight_no 拼接，若塞二字码就会出现"GJ GJ8604"式重复）。
+_CARRIER_CN = {
+    "3U": "川航", "GJ": "长龙", "EU": "成都", "TV": "西藏", "PN": "西部",
+    "KN": "中联航", "GS": "天津", "JD": "首都", "NS": "河北", "A6": "湖南",
+    "KY": "昆明", "SC": "山航", "MF": "厦航", "ZH": "深航", "BK": "奥凯",
+    "QW": "青岛", "DR": "瑞丽", "GT": "桂林", "G5": "华夏", "AQ": "九元",
+}
 
 _NO_KEY_REASON = ("未配置 API Key——在 https://ai.variflight.com/keys 创建后填入 "
                   "src/sources/variflight_config.json（已 gitignore，不入库）")
@@ -127,14 +144,14 @@ class VariflightSource(Source):
 
     @property
     def status(self):
-        if not self.has_key:
-            return "not_available"
-        if not SCHEMA_CALIBRATED:
+        if offline_mode() or not self.has_key or not SCHEMA_CALIBRATED:
             return "not_available"
         return "active"
 
     @property
     def status_reason(self):
+        if offline_mode():
+            return OFFLINE_REASON
         if not self.has_key:
             return _NO_KEY_REASON
         if not SCHEMA_CALIBRATED:
@@ -222,13 +239,100 @@ class VariflightSource(Source):
                 mapping["date"]: date.isoformat()}
 
     def _to_offers(self, parsed):
-        """把上游返回映射为比价行。
+        """把上游返回映射为比价行（字段名均为 2026-10-25 tools/list + 真实调用实测）。"""
+        result = parsed.get("result") or {}
+        if result.get("isError"):
+            return [], "上游工具返回错误（isError=true），本次不出数据"
+        text = ""
+        for part in (result.get("content") or []):
+            if isinstance(part, dict) and part.get("text"):
+                text = part["text"]
+                break
+        if not text:
+            return [], "上游未返回内容"
+        # 上游把 dict 以 Python 字面量形式包在文本里："Flight prices: {...}"
+        raw = text.split("Flight prices:", 1)[1].strip() if "Flight prices:" in text else text.strip()
+        try:
+            payload = ast.literal_eval(raw)
+        except (ValueError, SyntaxError):
+            return [], "上游返回格式无法解析（既非 JSON 也非 Python 字面量）"
+        if not isinstance(payload, dict):
+            return [], "上游返回结构异常"
+        code = payload.get("code")
+        if code != 200:
+            return [], f"上游返回 code={code}：{payload.get('message') or '未说明'}"
+        flights = payload.get("data") or []
+        if not flights:
+            return [], "上游查询成功但该航线当日无可售航班"
 
-        ⚠ schema 未校准前不猜测字段名：返回空结果并给出明确说明，绝不编造航班。
+        rows = []
+        for flight in flights[:_MAX_ROWS]:
+            row = self._to_offer(flight)
+            if row:
+                rows.append(row)
+        return rows, (None if rows else "上游返回的行程均无可用舱位价格")
+
+    def _to_offer(self, flight):
+        cabins = [c for c in (flight.get("cabins") or [])
+                  if isinstance(c, dict) and isinstance(c.get("price"), (int, float))]
+        if not cabins:
+            return None                      # 无价格不编造
+        econ = [c for c in cabins if str(c.get("cabinclass", "")).upper() == "Y"]
+        pick = min(econ or cabins, key=lambda c: c["price"])
+        price = round(pick["price"])
+        if price <= 0:
+            return None
+
+        dep_ts, arr_ts = flight.get("flightdeptimeplandate"), flight.get("flightarrtimeplandate")
+        dep_dt = self._beijing(dep_ts)
+        arr_dt = self._beijing(arr_ts)
+        if dep_dt is None or arr_dt is None:
+            return None                      # 时刻缺失无法核实，宁可不显示
+        minutes = int((arr_dt - dep_dt).total_seconds() // 60)
+        code = str(flight.get("flightcompany") or "").strip()
+        carrier = airlines.carrier_name(code) or _CARRIER_CN.get(code) or ""
+
+        def airport(name_key, code_key, terminal_key):
+            name = str(flight.get(name_key) or "").strip() or "未披露"
+            code = str(flight.get(code_key) or "").strip()
+            terminal = str(flight.get(terminal_key) or "").strip()
+            return f"{name}（{code}{' ' + terminal if terminal else ''}）"
+
+        stops = flight.get("stopflag") or 0
+        return {
+            "source_id": self.source_id,
+            "source_name": self.display_name,
+            "product": ("直飞" if not stops else
+                        f"经{str(flight.get('stopcityname') or flight.get('stopairportname') or '中转').strip()}中转")
+                       + "｜" + (carrier or code) + f"｜{pick.get('classname') or '经济舱'}",
+            "flight_no": str(flight.get("flightno") or "").replace(" ", ""),
+            "carrier_code": code,
+            # 未收录的航司留空：flight_display 只在有中文名时拼接，避免"GJ GJ8604"
+            "carrier_name": carrier,
+            "depart_time": dep_dt.strftime("%H:%M"),
+            "arrive_time": arr_dt.strftime("%H:%M"),
+            "cross_day": arr_dt.date() != dep_dt.date(),
+            "duration_text": (f"{minutes // 60}小时{minutes % 60:02d}分"
+                              if minutes > 0 else "未披露"),
+            "dep_airport": airport("depaptcname", "flightdepcode", "flighthterminal"),
+            "arr_airport": airport("arraptcname", "flightarrcode", "flightterminal"),
+            "price": price,
+            # 上游 oilfee/tax 字段为空，票价是否含税未明示 → 按票面价处理，
+            # 由引擎用全站口径补 fee_breakdown/total_estimate（不重复叠加）
+            "tax_included": False,
+            "is_deal": False,
+            "note": _HONESTY_NOTE,
+        }
+
+    @staticmethod
+    def _beijing(ts):
+        """上游时间戳是"北京时间的 epoch"（实测：按 UTC 解 02:35 → 加 8h 为 10:35，合理）。
+
+        显式加 8 小时而非用 fromtimestamp，避免宿主时区不同导致时刻漂移。
         """
-        if not SCHEMA_CALIBRATED:
-            return [], "飞常准工具返回结构未校准（未执行 tools/list），本次不出数据"
-        return [], "飞常准返回结构中未找到可映射的行程（待校准映射表）"
+        if not isinstance(ts, (int, float)) or ts <= 0:
+            return None
+        return dt.datetime(1970, 1, 1) + dt.timedelta(seconds=int(ts), hours=8)
 
     def empty_note(self, origin, destination, date):
         cached = self._cache_read(f"offers_{origin}_{destination}_{date.isoformat()}.json")

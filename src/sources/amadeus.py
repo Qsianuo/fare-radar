@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .base import Source
+from .base import Source, offline_mode, OFFLINE_REASON
 from . import airlines, cities
 
 CONFIG_NAME = "amadeus_config.json"
@@ -67,14 +67,20 @@ class AmadeusSource(Source):
         return bool(self._config.get("client_id")) and bool(self._config.get("client_secret"))
 
     @property
-    def status(self):  # 覆盖基类类属性：按是否配置 Key 动态报告
+    def status(self):
+        if offline_mode():
+            return "not_available"
         return "active" if self.has_key else "not_available"
 
     @property
     def status_reason(self):
+        if offline_mode():
+            return OFFLINE_REASON
         return "" if self.has_key else _NO_KEY_REASON
 
     def availability(self, origin, destination, date):
+        if offline_mode():
+            return False, OFFLINE_REASON
         if not self.has_key:
             return False, _NO_KEY_REASON
         return True, None
