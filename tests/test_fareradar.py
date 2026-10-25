@@ -21,6 +21,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import fareradar as fr  # noqa: E402
+
+# 测试一律离线：网络类真实接口票源视为未配置 Key（零真实请求）。
+# 注：unittest discover 以顶层模块导入，tests/__init__.py 不执行，故逐模块注入。
+import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
+_am.CONFIG_NAME = _rp.CONFIG_NAME = "_test_offline_absent.json"
 import webapp  # noqa: E402
 from sources import all_sources, cities, fees, pricing, source_catalog  # noqa: E402
 from sources.douyin_groupbuy import DouyinGroupbuySource  # noqa: E402
@@ -508,11 +513,13 @@ class SourceFamilyTest(unittest.TestCase):
     not_available（原因不同于"无合规接口"——它是可接入但未配置）。
     """
 
-    FAMILY = [("snapshot_pack", "实测快照"), ("amadeus", "Amadeus 真实接口"),
+    FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI 实时比价"),
+              ("amadeus", "Amadeus 真实接口"),
               ("airline", "航司直连"), ("ota", "OTA 比价"),
               ("douyin_groupbuy", "抖音团购"), ("douyin_miniapp", "抖音小程序·春秋航空"),
               ("douyin_live", "抖音直播间")]
     NOT_AVAILABLE = ("airline", "ota", "douyin_live")
+    CONFIG_GATED = ("amadeus", "rapidapi_sky")  # 有 Key=active，无 Key=not_available
 
     def test_catalog_matches_v15(self):
         catalog = source_catalog()
@@ -520,9 +527,11 @@ class SourceFamilyTest(unittest.TestCase):
         for entry in catalog:
             self.assertNotIn("模拟", entry["name"])
             self.assertTrue(entry["description"], "每个票源需有一句话说明")
-            if entry["id"] == "amadeus":
-                self.assertEqual(entry["status"], "not_available")
-                self.assertIn("未配置 API Key", entry["reason"])
+            if entry["id"] in self.CONFIG_GATED:
+                self.assertIn(entry["status"], ("active", "not_available"),
+                              "配置门控渠道：状态取决于本地是否配置 Key")
+                if entry["status"] == "not_available":
+                    self.assertIn("未配置 API Key", entry["reason"])
             elif entry["id"] in self.NOT_AVAILABLE:
                 self.assertEqual(entry["status"], "not_available")
                 self.assertEqual(entry["reason"], "暂无合规公开接口，未接入")
