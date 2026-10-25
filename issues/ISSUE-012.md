@@ -50,6 +50,9 @@
 
 ## Code Review（总协调者填）
 
+- 评审记录：**通过**，详见 prs/PR-012.md 与 docs/fix-report-v1.5.0.md（研发按评审人《修复执行提示词》产出的四段式报告，2026-10-25）。
+- 评审要点：①比价结果零编造航班号（grep 反向断言仅剩禁令注释；CZ9782/CZ8645/CZ7836 零出现）；②INC→CAN 2026-11-01 与航旅纵横快照 8/8 逐字一致，同口径价差 0 ≤ ¥50；③渲染拼接修复（"南航 CZ9782"式，flight_display 一等字段全链路）；④三渠道如实标注 not_available"暂无合规公开接口，未接入"；⑤确定性保持、144 例全绿。合并提交见 main，tag v1.5.0。
+
 ## Test（Tester 填）
 
 - 测试人: Tester | 日期: 2026-10-25 | 对象: main@3233b15（tag v1.5.0，PR-012 合并后） | 方式: 聚焦回归——`python -m unittest discover tests` + 起服务 `python src/webapp.py --port 8082` 以 curl/urllib 黑盒 + CLI 双入口抽查。**结论：6 项全部通过，无新缺陷。**
