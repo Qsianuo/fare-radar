@@ -119,3 +119,13 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 - 不出票、不支付、不跳转；收藏无后台轮询（每次运行时检查一次）。
 - 价格为分钟级演示波动，同一分钟内一致；不是实时行情，也不预测未来价格。
 - 同城多机场（如虹桥/浦东）按注册表唯一机场演示；暂不支持往返、多航段、舱位/时段筛选与 `--json` 机读输出。
+
+## 接入 Amadeus 真实接口（可选，默认关闭）
+
+工具内置一个**真实 API 票源**（Amadeus Self-Service，国际 GDS 开发者平台）。默认关闭——未配置 Key 时渠道显示"未配置 API Key"，不假装接入。启用三步：
+
+1. 注册：https://developers.amadeus.com （免费），创建应用拿到 API Key（client_id / client_secret）。
+2. 配置：复制 `src/sources/amadeus_config.example.json` 为 `src/sources/amadeus_config.json`，填入 Key；若走代理，填 `proxy`（如 `http://127.0.0.1:7897`），并确保代理放行 `*.amadeus.com`。
+3. 重启 `python src/webapp.py`，渠道"Amadeus 真实接口"即变为可用，查询结果带"真实接口"标注。
+
+内置调用纪律（自动生效）：Token 缓存复用、同航线同日期结果缓存 30 分钟、**当日最多 200 次调用**（达到自动停用当日渠道）、超时 10 秒、遇 429 立即停不重试。注意：Amadeus 对**中国国内航线覆盖有限**，返回为空时如实显示无报价；测试环境数据可能为缓存，购买以官方渠道为准。

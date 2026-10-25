@@ -1,0 +1,7 @@
+{
+  "_说明": "复制本文件为 amadeus_config.json 并填入你的 Key（该文件已被 gitignore，不会提交）。注册地址 https://developers.amadeus.com（免费）。env 用 test 即测试环境；proxy 填本机代理（如 http://127.0.0.1:7897），规则模式下请确保 *.amadeus.com 走代理。",
+  "client_id": "",
+  "client_secret": "",
+  "env": "test",
+  "proxy": ""
+}
