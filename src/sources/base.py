@@ -10,6 +10,10 @@ v1.4 起票源分两类产品（PRD 第 7 节）：
 覆盖不含该航线、当日无座或"卡类渠道不卖航班"时返回 (False, 原因)，引擎
 （fareradar.collect）统一执行并汇总为 unavailable_sources；search() 对不可用
 查询返回空列表。演示数据必须讲道理：真实渠道不存在的航班不编价。
+
+渠道状态（v1.5.0，ISSUE-012 修复裁定）：status="not_available" 的渠道是
+"暂无合规公开接口，未接入"的渠道概念保留但不出任何数据行（不假装接入、
+不编造）；比价行仅允许来自实测快照（snapshot_pack）与真实商品（特价票/卡）。
 """
 
 
@@ -21,6 +25,8 @@ class Source:
     tagline = ""
     entry_url = ""    # 渠道入口链接；空串表示无单一入口（前端不渲染链接）
     entry_note = ""   # 入口说明（如"各航司官网/官方小程序"）
+    status = "active"          # "active"=有真实数据行 / "not_available"=未接入
+    status_reason = ""         # not_available 时的显式原因（供 /api/sources 与提示）
 
     def availability(self, origin, destination, date):
         """本次查询该票源是否有销售：(True, None) 可用，(False, 中文原因) 不可用。

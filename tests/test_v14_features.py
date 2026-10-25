@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""FareRadar v1.4 新特性单测（ISSUE-011 / PRD v1.4 第 4~8 节）。
+"""FareRadar v1.4 特性单测（v1.5 口径改写，ISSUE-011/012）。
 
-覆盖：航司名册与枢纽规则、航班时刻不变式（时段覆盖/不跨日/5 分钟粒度/到达=
-起飞+时长）、税费与到手价（分档边界 800km）、跨渠道去重不变式、21 条固定特价票
-逐字校验与仅当日可售、次卡卡池（命中规则/未披露退改/售罄/不计入比价）、
-已下线城市收藏兼容、CLI 表格 CJK 对齐。
+覆盖：航司名册与枢纽规则、航班时刻不变式（时段覆盖/不跨日/5 分钟粒度）、
+税费与到手价（分档边界 800km）、跨渠道去重不变式、21 条固定特价票逐字校验
+与仅当日可售（v1.5：不再编造航班号/时刻）、次卡卡池（命中规则/未披露退改/
+售罄/不计入比价）、已下线城市收藏兼容、CLI 表格 CJK 对齐。
 运行：python -m unittest discover tests -v
 """
 
@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -27,6 +28,12 @@ from sources.douyin_miniapp import _SPECIAL_FARES, DouyinMiniappSource  # noqa: 
 
 PINNED_MINUTE = 29_500_000
 SPECIAL_DATE_FMT = "%Y-%m-%d"
+SNAPSHOT_DATE = dt.date(2026, 11, 1)
+
+
+def _pinned(date=SNAPSHOT_DATE):
+    """旁路 parse_date 的"不早于今天"校验（快照日期可能成为过去）。"""
+    return mock.patch.object(fr, "parse_date", lambda raw: date)
 
 
 def _minutes(hhmm):
@@ -137,16 +144,14 @@ class ScheduleInvariantTest(unittest.TestCase):
                                  "航班号 = 承运人二字码 + 4 位数字")
             self.assertEqual(len(set(numbers)), len(numbers), "同航线内航班号唯一（同渠道班次不重号）")
 
-    def test_airline_source_rows_match_schedule(self):
-        origin, destination = "SHA", "CTU"
-        schedule = airlines.route_flights(origin, destination)
-        with pricing.fixed_minute(PINNED_MINUTE):
-            offers, _f, _u = fr.collect([s for s in all_sources() if s.source_id == "airline"],
-                                        origin, destination, dt.date(2026, 11, 20))
-        self.assertEqual({o["flight_no"] for o in offers}, {f["flight_no"] for f in schedule})
-        for offer in offers:
-            self.assertTrue(offer["carrier_name"] and offer["carrier_code"])
-            self.assertIn(offer["carrier_code"], airlines.AIRLINES)
+    def test_airline_source_retired_no_rows(self):
+        # v1.5（ISSUE-012）：引擎编造正班退场——航司直连不再出任何比价行
+        airline = [s for s in all_sources() if s.source_id == "airline"][0]
+        offers, _f, _u = fr.collect([airline], "SHA", "CTU", dt.date(2026, 11, 20))
+        self.assertEqual(offers, [])
+        available, reason = airline.availability("SHA", "CTU", dt.date(2026, 11, 20))
+        self.assertFalse(available)
+        self.assertEqual(reason, "暂无合规公开接口，未接入")
 
     def test_carrier_tier_semantics(self):
         # 9C 低成本不含税、其余含税（口径明细由 fee_breakdown 承载）
@@ -181,50 +186,43 @@ class FeeEngineTest(unittest.TestCase):
                               "included_desc": "不含机建燃油费"})
 
     def test_engine_applies_distance_tiers(self):
-        # 上海-南京 266km → 燃油 20；上海-北京 1067km → 燃油 40
-        for (origin, destination), fuel in ((("SHA", "NKG"), 20), (("SHA", "PEK"), 40)):
-            offers, _f, _u = fr.collect(all_sources(), origin, destination, dt.date(2026, 11, 20))
-            for offer in offers:
+        # 上海-泉州 ≈ 750km → 燃油 20；上海-三亚 ≈ 1900km → 燃油 40（特价票行走费用引擎）
+        for (origin, destination), fuel, date in ((("SHA", "JJN"), 20, dt.date(2026, 10, 27)),
+                                                  (("SHA", "SYX"), 40, dt.date(2026, 10, 28))):
+            offers, _f, _u = fr.collect(all_sources(), origin, destination, date)
+            rows = [o for o in offers if not o.get("is_snapshot")]
+            self.assertTrue(rows, f"{origin}-{destination} 特价票行存在")
+            for offer in rows:
                 self.assertEqual(offer["fee_breakdown"]["fuel_fee"], fuel)
 
 
 class DedupTest(unittest.TestCase):
-    """PRD v1.4 第 6 节：去重键=出发日期+航班号，只做跨渠道去重。"""
+    """PRD v1.4 第 6 节：去重键=出发日期+航班号，只做跨渠道去重。
 
-    def _collect(self, origin="SHA", destination="CTU", date=dt.date(2026, 11, 20)):
-        with pricing.fixed_minute(PINNED_MINUTE):
-            return fr.collect(all_sources(), origin, destination, date)
+    v1.5（ISSUE-012）：比价行仅来自实测快照单渠道，线上不再产生跨渠道重复；
+    去重逻辑保留（未来多真实源接入即用），以单元级锁定。
+    """
 
-    def test_ota_agent_row_carries_schedule_flight_no(self):
-        offers, _f, _u = self._collect()
-        schedule = airlines.route_flights("SHA", "CTU")
-        agent = [o for o in offers if o["source_id"] == "ota" and o.get("flight_no")]
-        self.assertEqual(len(agent), 1, "OTA 特惠代理票携带确定性的正班航班号")
-        self.assertIn(agent[0]["flight_no"], {f["flight_no"] for f in schedule},
-                      "代理票与航司直连同航班号 → 形成真实跨渠道重复")
+    def test_ota_channel_retired(self):
+        ota = [s for s in all_sources() if s.source_id == "ota"][0]
+        available, reason = ota.availability("SHA", "CTU", dt.date(2026, 11, 20))
+        self.assertFalse(available)
+        self.assertEqual(reason, "暂无合规公开接口，未接入")
+        self.assertEqual(ota.search("SHA", "CTU", dt.date(2026, 11, 20)), [])
 
     def test_cross_channel_merge_keeps_lowest_total(self):
-        offers, _f, _u = self._collect()
-        dup = [o for o in offers if o.get("channel_count", 1) > 1]
-        self.assertTrue(dup, "SHA-CTU 应存在跨渠道同航班号重复")
-        merged = dup[0]
-        self.assertEqual(merged["channel_count"], 2)
-        self.assertEqual(set(merged["channel_names"]), {"OTA 比价", "航司直连"})
-        self.assertIn("另有 1 个渠道有售", fr.search_note(merged, dt.date(2026, 11, 20)))
-        # 被保留的必须是两渠道中到手价最低者
-        airline_same = [o for o in fr.collect(all_sources(), "SHA", "CTU", dt.date(2026, 11, 20))[0]
-                        if o.get("flight_no") == merged["flight_no"]]
-        self.assertEqual(len(airline_same), 1, "同航班号去重后只保留 1 行")
-        flight = next(f for f in airlines.route_flights("SHA", "CTU")
-                      if f["flight_no"] == merged["flight_no"])
-        carrier = airlines.AIRLINES[flight["carrier_code"]]
-        from sources import pricing as _p
-        airline_price = _p.quote("SHA", "CTU", dt.date(2026, 11, 20),
-                                 key=f"airline|{merged['flight_no']}", tier=carrier["tier"])
-        airline_total = fees.total_estimate(airline_price, carrier["tax_included"],
-                                            cities.distance_km("SHA", "CTU"))
-        self.assertLessEqual(fr.total_price(merged), airline_total,
-                             "合并保留到手最低价（OTA 档位低于航司档位时由 OTA 行胜出）")
+        # 跨渠道合并单元锁定：同航班号两渠道行合并为 1 行，保留到手最低价
+        date = dt.date(2026, 11, 20)
+        rows = [{"source_id": "airline", "source_name": "航司直连", "price": 900,
+                 "total_estimate": 900, "product": "MU0001", "flight_no": "MU0001"},
+                {"source_id": "ota", "source_name": "OTA 比价", "price": 850,
+                 "total_estimate": 850, "product": "特惠代理票·MU0001", "flight_no": "MU0001"}]
+        merged = fr.dedup_offers(rows, date)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["channel_count"], 2)
+        self.assertEqual(set(merged[0]["channel_names"]), {"OTA 比价", "航司直连"})
+        self.assertEqual(merged[0]["price"], 850, "合并保留到手最低价")
+        self.assertIn("另有 1 个渠道有售", fr.search_note(merged[0], date))
 
     def test_same_channel_flights_never_merged(self):
         # 单元不变式：同渠道两行（不同航班号）去重后各自成行
@@ -234,28 +232,27 @@ class DedupTest(unittest.TestCase):
                 {"source_id": "airline", "source_name": "航司直连", "price": 600,
                  "total_estimate": 600, "product": "MU0002", "flight_no": "MU0002"}]
         self.assertEqual(len(fr.dedup_offers(rows, date)), 2)
-        # 集成不变式：正班 3 班（航司直连 ∪ OTA 代理）去重后航班号并集不变
-        offers, _f, _u = self._collect()
-        schedule_nos = {f["flight_no"] for f in airlines.route_flights("SHA", "CTU")}
-        flight_rows = [o for o in offers if o.get("flight_no") in schedule_nos]
-        self.assertEqual({o["flight_no"] for o in flight_rows}, schedule_nos)
-        self.assertTrue(all(o.get("channel_count", 1) == 1
-                            for o in flight_rows if o["source_id"] == "airline"),
-                        "同渠道多时段班次一律不去重（合并行只可能来自跨渠道）")
+        # 集成不变式：快照行同渠道多班次，去重后航班号并集不变
+        offers, _f, _u = fr.collect(all_sources(), "INC", "CAN", dt.date(2026, 11, 1))
+        self.assertTrue(offers)
+        self.assertTrue(all(o.get("channel_count", 1) == 1 for o in offers),
+                        "快照单渠道：无跨渠道合并行")
 
     def test_rows_without_flight_no_never_deduped(self):
-        offers, _f, _u = self._collect()
-        for offer in offers:
-            if offer["source_id"] in ("douyin_live",) or not offer.get("flight_no"):
-                self.assertNotIn("channel_count", offer, "券/卡无航班号不参与去重")
+        date = dt.date(2026, 11, 20)
+        rows = [{"source_id": "a", "source_name": "A", "price": 100,
+                 "total_estimate": 100, "product": "券A"},
+                {"source_id": "b", "source_name": "B", "price": 100,
+                 "total_estimate": 100, "product": "券B"}]
+        self.assertEqual(len(fr.dedup_offers(rows, date)), 2, "无航班号的行不参与去重")
 
     def test_special_fare_exempt_from_dedup(self):
-        offers, _f, _u = self._collect("SHA", "JJN", dt.date(2026, 10, 27))
+        offers, _f, _u = fr.collect(all_sources(), "SHA", "JJN", dt.date(2026, 10, 27))
         special = [o for o in offers if o.get("is_special_fare")]
         self.assertEqual(len(special), 1)
         self.assertTrue(special[0].get("no_dedup"))
         self.assertNotIn("channel_count", special[0], "特价票不参与跨渠道去重")
-        self.assertTrue(special[0]["flight_no"], "特价票仍展示航班号（6 要素）")
+        self.assertIsNone(special[0]["flight_no"], "特价票卡面未展示航班号（不编造）")
 
 
 class SpecialFareTest(unittest.TestCase):
@@ -302,23 +299,19 @@ class SpecialFareTest(unittest.TestCase):
                 self.assertFalse([o for o in off if o.get("is_special_fare")],
                                  f"{dest} 特价票在 {other} 不可售")
 
-    def test_fixed_times_deterministic_and_period_cycles(self):
+    def test_flight_fields_not_fabricated_and_deterministic(self):
         miniapp = DouyinMiniappSource()
-        periods = []
         for index, (date_text, dest, _price) in enumerate(self.TABLE):
             date = dt.date.fromisoformat(date_text)
             first = miniapp.search("SHA", dest, date)[0]
             second = miniapp.search("SHA", dest, date)[0]
-            self.assertEqual(first["depart_time"], second["depart_time"],
+            self.assertEqual(first, second,
                              "同航线同日期任何入口查询一致（确定性锁定）")
-            dep = _minutes(first["depart_time"])
-            window = {"morning": (360, 719), "noon": (720, 1079), "evening": (1080, 1439)}
-            matched = [name for name, (lo, hi) in window.items() if lo <= dep <= hi]
-            self.assertEqual(len(matched), 1)
-            periods.append(matched[0])
-            self.assertEqual(matched[0], ("morning", "noon", "evening")[index % 3],
-                             "固定航班时段按价格表顺序早/中/晚分布")
-        self.assertTrue({"morning", "noon", "evening"} <= set(periods))
+            # v1.5（ISSUE-012）：卡面未展示航班号/时刻——出 None，禁止编造填充
+            self.assertIsNone(first.get("flight_no"), f"{dest} 特价票不得编造航班号")
+            self.assertIsNone(first.get("depart_time"), f"{dest} 特价票不得编造时刻")
+            self.assertEqual(first["carrier_code"], "9C")
+            self.assertEqual(first["carrier_name"], "春秋")
 
     def test_qianjiang_card_face_verbatim(self):
         catalog = fr.special_fare_catalog("SHA", "JIQ")
@@ -326,15 +319,16 @@ class SpecialFareTest(unittest.TestCase):
                          "特价票卡面照抄评审人'黔江(重庆)'原口径")
         self.assertEqual(cities.city_name("JIQ"), "黔江", "城市名保持'黔江'")
 
-    def test_catalog_has_21_and_carries_full_fields(self):
+    def test_catalog_has_21_and_verbatim_fields(self):
         catalog = fr.special_fare_catalog()
         self.assertEqual(len(catalog), 21)
         for item in catalog:
             self.assertEqual(item["origin"], "SHA")
-            self.assertTrue(item["depart_time"] and item["arrive_time"])
-            self.assertTrue(item["flight_no"].startswith("9C"))
-            self.assertTrue(item["dep_airport"].endswith("机场"))
-            self.assertTrue(item["arr_airport"].endswith("机场"))
+            self.assertTrue(item["date"] and item["price"], "日期与票价逐字保留")
+            self.assertEqual(item["carrier_code"], "9C")
+            self.assertTrue(item["destination_display"])
+            self.assertIsNone(item.get("flight_no"), "目录不携带编造航班号")
+            self.assertIsNone(item.get("depart_time"), "目录不携带编造时刻")
 
     def test_special_fare_enters_ranking_with_total_price(self):
         # 特价票是具体航班票：计入比价行，到手价 = 票面 + 机建 + 燃油
@@ -409,13 +403,12 @@ class CardsTest(unittest.TestCase):
 
     def test_cli_card_hints_block_before_rows(self):
         buf = io.StringIO()
-        with pricing.fixed_minute(PINNED_MINUTE), redirect_stdout(buf):
-            fr.main(["search", "--from", "SHA", "--to", "CTU", "--date", "2026-11-20"])
+        with _pinned(), redirect_stdout(buf):
+            fr.main(["search", "--from", "INC", "--to", "CAN", "--date", "2026-11-01"])
         out = buf.getvalue()
         self.assertIn("[卡提示]", out, "CLI 在比价行前输出卡提示块")
         self.assertIn("不计入比价", out)
         self.assertIn("退改规则未披露", out)
-        self.assertIn("售罄", out, "售罄卡照常展示并披露")
         self.assertLess(out.index("[卡提示]"), out.index("到手价 "), "卡提示块位于比价行之前")
 
     def test_no_card_block_when_no_hit(self):
@@ -434,9 +427,10 @@ class CardsTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("固定特价票（21 条", out)
         self.assertIn("上海→黔江(重庆)", out)
-        self.assertIn("卡池（10 张", out, "6 张团购卡 + 当日 4 场闪购卡")
+        self.assertIn("未披露（以下单页为准）", out, "特价票卡面未展示航班号/时刻——诚实渲染")
+        self.assertIn("卡池（6 张", out, "6 张团购卡（直播闪购引擎卡已退场）")
         self.assertIn("退改规则未披露", out)
-        self.assertIn("[演示数据]", out.splitlines()[0])
+        self.assertIn("[真实商品]", out.splitlines()[0])
 
     def test_card_price_fixed_no_wiggle(self):
         first = DouyinGroupbuySource().deals()
@@ -479,7 +473,8 @@ class RetiredCityTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("城市已下线", out)
         self.assertIn("不参与比价与提醒", out)
-        self.assertEqual(out.count("[低价提醒]"), 1, "另一条正常收藏照常检查")
+        self.assertIn("暂无报价数据", out, "SHA→CTU 无快照数据，显式披露（不编数）")
+        self.assertEqual(out.count("[低价提醒]"), 0, "无数据航线不得触发提醒")
 
     def test_web_watch_list_carries_retired_flag(self):
         _, payload = webapp._api_watch_list({})
@@ -489,7 +484,8 @@ class RetiredCityTest(unittest.TestCase):
         self.assertIsNone(by_dest["HKG"]["current_lowest"])
         self.assertFalse(by_dest["HKG"]["below_threshold"])
         self.assertFalse(by_dest["CTU"]["retired"])
-        self.assertIsNotNone(by_dest["CTU"]["current_lowest"])
+        self.assertIsNone(by_dest["CTU"]["current_lowest"],
+                          "快照未收录航线：无当前最低价（不编数）")
 
     def test_web_watch_check_reports_retired_line(self):
         _, payload = webapp._api_watch_check({})
