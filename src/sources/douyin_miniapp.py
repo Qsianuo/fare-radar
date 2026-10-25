@@ -1,29 +1,26 @@
-"""抖音小程序·春秋航空票源：固定特价票（①类产品）+ 会员价常规航班。
+"""抖音小程序·春秋航空票源：固定特价票（①类真实商品）。
 
-两类产品分别建模（PRD v1.4 第 7.1 节）：
-- 固定特价票：固定航线+固定日期+固定价+固定航班时间，逐字采用评审人 21 条
-  真实国内数据，仅出发日期精确匹配时返回；固定标签"不含机建燃油费/省 ¥41"。
-- 会员价常规航班：春秋基地航线（SHA/SHE/SZX 至少一端）∪ 21 条特价票航线，
-  引擎定价（会员价特征），对覆盖航线按日期哈希确定性模拟"当日无座"
-  （约 1/7 的日期无报价，还原真实渠道"暂无可销售座位"的体验）。
+v1.5.0（ISSUE-012 修复裁定）：
+- 保留 21 条固定特价票——出发日期/到达城市/票面价/固定标签逐字采用评审人
+  提供的真实商品信息（抖音小程序·春秋航空截图），仅出发日期精确匹配时返回；
+- "会员价常规航班"退场：其价格由引擎定价生成、航班号/时刻由 airlines 模块
+  哈希编造，与真实航班计划零重合，属编造数据；
+- 特价票卡面未展示航班号与起降时刻——诚实披露为"未披露"，禁止用生成值
+  填充（评审人约束：禁止编造或拼凑航班号）。
 
-确定性红线：无随机数；特价票固定时刻同航线同日期任何入口一致。
+确定性红线：无随机数；特价票仅固定日期可售，同航线同日期任何入口一致。
 """
 
 import datetime as dt
 
-from . import airlines, cities, pricing
+from . import cities
 from .base import Source
 
-_TIER = 0.85  # 会员/小程序渠道价：常低于航司直连
-_BASE_CITIES = ("SHA", "SHE", "SZX")  # 春秋基地（演示口径，v1.4 移除大阪）
-_NO_SEAT_MODULUS = 7  # 约每 7 天一个"当日无座"日
 _FARE_YEAR = 2026     # PRD 裁定：21 条特价票年份 = 2026
 _SAVE_TAG = "省 ¥41"  # 固定标签，照抄真实截图
-_PERIOD_CYCLE = ("morning", "noon", "evening")  # 固定航班时段按价格表顺序早/中/晚循环
 
 # 21 条固定特价票（PRD v1.4 第 7.1 节逐字：出发日期 MM-DD、到达城市码、票面价）。
-# 顺序 = PRD 价格表顺序；时段按价格表顺序早/中/晚循环分布（确定性）。
+# 顺序 = PRD 价格表顺序。
 # 黔江为重庆市下辖区：城市名保持"黔江"，卡面照抄评审人"黔江(重庆)"原口径。
 _SPECIAL_FARES = (
     ("10-26", "LJG", 359),
@@ -60,8 +57,9 @@ def _dest_display(code):
 def special_fare_catalog(origin=None, destination=None):
     """21 条特价票全量目录（deals 视图用）；可按出发/到达三字码过滤。
 
-    字段：origin/destination/route/date/price/时刻/航班号/承运人/机场全称。
-    固定航班时段按价格表顺序早/中/晚循环分布（确定性）。
+    字段：origin/destination/route/date/price/承运人（渠道=春秋航空为事实）/
+    卡面目的地显示；航班号与起降时刻卡面未展示，不出字段（上层按"未披露"
+    渲染，禁止编造填充）。
     """
     items = []
     for index, (mmdd, dest, price) in enumerate(_SPECIAL_FARES):
@@ -70,9 +68,6 @@ def special_fare_catalog(origin=None, destination=None):
         if destination and destination != dest:
             continue
         date = dt.date(_FARE_YEAR, int(mmdd[:2]), int(mmdd[3:]))
-        period = _PERIOD_CYCLE[index % len(_PERIOD_CYCLE)]
-        flight = airlines.build_flight("SHA", dest, "9C", f"special|SHA{dest}|{mmdd}", set(),
-                                       period=period)
         items.append({
             "deal_id": f"SP-{index + 1:02d}",
             "origin": "SHA",
@@ -80,49 +75,32 @@ def special_fare_catalog(origin=None, destination=None):
             "route": f"SHA-{dest}",
             "date": date.isoformat(),
             "price": price,
-            "depart_time": flight["depart_time"],
-            "arrive_time": flight["arrive_time"],
-            "duration_text": flight["duration_text"],
-            "flight_no": flight["flight_no"],
             "carrier_code": "9C",
             "carrier_name": "春秋",
-            "dep_airport": flight["dep_airport"],
-            "arr_airport": flight["arr_airport"],
             "destination_display": _dest_display(dest),
         })
     return items
 
 
 class DouyinMiniappSource(Source):
-    """抖音小程序·春秋航空：固定特价票 + 会员价常规航班（直飞机票，非券）。"""
+    """抖音小程序·春秋航空：仅固定特价票（真实商品），仅固定日期可售。"""
 
     source_id = "douyin_miniapp"
     display_name = "抖音小程序·春秋航空"
-    tagline = "春秋自营抖音小程序：固定特价票+会员价常规航班，不含行李额"
+    tagline = "春秋自营抖音小程序：21 条固定特价票（真实商品），不含行李额"
     entry_url = "https://v.douyin.com/USSyX47SP7s/"
     entry_note = "春秋航空·特价票与固定航线机票（抖音地点页）"
-
-    def availability(self, origin, destination, date):
-        """基地航线之外不覆盖；覆盖航线按日期确定性模拟当日无座（约 1/7）。"""
-        if not (origin in _BASE_CITIES or destination in _BASE_CITIES):
-            return False, "仅覆盖春秋基地航线（上海/沈阳/深圳至少一端），该航线可能未执飞"
-        if pricing.stable_hash(f"miniapp|{origin}{destination}|{date.isoformat()}") % _NO_SEAT_MODULUS == 0:
-            return False, "当日无座（可能未执飞或当日售罄），可换日期或到春秋官方渠道查询"
-        return True, None
 
     def _special_fare(self, origin, destination, date):
         """出发日期精确匹配的固定特价票（仅当日可售，其余日期不出现）。"""
         if origin != "SHA":
             return None
-        for index, (entry_date, dest, price) in enumerate(_SPECIAL_FARES):
+        for entry_date, dest, price in _SPECIAL_FARES:
             if dest != destination:
                 continue
             fixed = dt.date(_FARE_YEAR, int(entry_date[:2]), int(entry_date[3:]))
             if date != fixed:
                 continue
-            flight = airlines.build_flight(
-                "SHA", dest, "9C", f"special|SHA{dest}|{entry_date}", set(),
-                period=_PERIOD_CYCLE[index % len(_PERIOD_CYCLE)])
             return {
                 "source_id": self.source_id,
                 "source_name": self.display_name,
@@ -133,46 +111,25 @@ class DouyinMiniappSource(Source):
                 "is_special_fare": True,
                 "no_dedup": True,            # 特价票不参与跨渠道去重（渠道独家固定产品）
                 "included_desc": "不含机建燃油费",
+                "carrier_code": "9C",
+                "carrier_name": "春秋",
+                "flight_no": None,           # 卡面未展示航班号——禁止编造填充
                 "note": f"特价票·固定航班日期·不含机建燃油费｜{_SAVE_TAG}"
-                        f"｜限 {fixed.isoformat()} 出发｜需抖音 App 跳转小程序下单",
-                **{k: flight[k] for k in ("depart_time", "arrive_time", "duration_text",
-                                          "dep_airport", "arr_airport",
-                                          "carrier_code", "carrier_name", "flight_no")},
+                        f"｜限 {fixed.isoformat()} 出发｜航班号与时刻未披露（以下单页为准）"
+                        f"｜需抖音 App 跳转小程序下单",
             }
         return None
 
-    def _regular_offer(self, origin, destination, date):
-        """会员价常规航班（引擎定价，9C 承运，确定性时刻/航班号）。"""
-        price = pricing.quote(origin, destination, date,
-                              key=f"miniapp|{origin}{destination}", tier=_TIER)
-        if price is None:
-            return None
-        flight = airlines.build_flight(origin, destination, "9C",
-                                       f"miniapp|{origin}{destination}", set())
-        return {
-            "source_id": self.source_id,
-            "source_name": self.display_name,
-            "product": "春秋会员价直飞",
-            "price": price,
-            "tax_included": True,
-            "is_deal": False,
-            "note": "会员价常规航班｜需抖音 App 跳转小程序下单｜不含行李额，退改较严",
-            **{k: flight[k] for k in ("depart_time", "arrive_time", "duration_text",
-                                      "dep_airport", "arr_airport",
-                                      "carrier_code", "carrier_name", "flight_no")},
-        }
+    def availability(self, origin, destination, date):
+        """仅当该航线+日期恰有固定特价票时可用；其余显式报无（不编常规票）。"""
+        if self._special_fare(origin, destination, date) is not None:
+            return True, None
+        return False, ("该航线/日期无固定特价票（特价票仅固定日期可售），"
+                       "可到春秋官方渠道查询常规航班")
 
     def search(self, origin, destination, date):
-        offers = []
         special = self._special_fare(origin, destination, date)
-        if special is not None:
-            offers.append(special)
-        available, _reason = self.availability(origin, destination, date)
-        if available:
-            regular = self._regular_offer(origin, destination, date)
-            if regular is not None:
-                offers.append(regular)
-        return offers
+        return [special] if special is not None else []
 
     def special_fares(self, origin=None, destination=None):
         """21 条固定特价票目录（deals 视图用，PRD v1.4 第 7.1 节）。"""
