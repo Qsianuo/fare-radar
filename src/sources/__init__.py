@@ -15,6 +15,7 @@ from .douyin_groupbuy import DouyinGroupbuySource
 from .douyin_live import DouyinLiveSource
 from .douyin_miniapp import DouyinMiniappSource
 from .ota import OtaSource
+from .rapidapi_sky import RapidapiFlightSource
 from .snapshot_pack import SnapshotPackSource
 
 __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
@@ -24,10 +25,12 @@ __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
 def all_sources():
     """返回全部已登记票源的新实例列表（注册顺序即展示顺序）。
 
-    AmadeusSource 为真实接口适配器（ISSUE-013）：未配置 Key 时 status=
-    not_available（不出数据行、如实声明"未配置"），配置后激活。
+    真实接口适配器（均默认关闭/按配置激活）：AmadeusSource（自助门户已下线，
+    仅存量企业 Key 可用）、RapidapiFlightSource（v1.7，免费档订阅）。
+    未配置 Key 时 status=not_available，不出数据行、如实声明。
     """
-    return [SnapshotPackSource(), AmadeusSource(), AirlineSource(), OtaSource(),
+    return [SnapshotPackSource(), RapidapiFlightSource(), AmadeusSource(),
+            AirlineSource(), OtaSource(),
             DouyinGroupbuySource(), DouyinMiniappSource(), DouyinLiveSource()]
 
 

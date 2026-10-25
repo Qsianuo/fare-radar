@@ -1,0 +1,6 @@
+{
+  "_说明": "复制为 rapidapi_config.json 填入你的 Key。在 rapidapi.com 订阅 Flights Scraper Sky 免费档后，开发者后台 default-application 的 X-RapidAPI-Key。proxy 可留空（直连可达）。",
+  "api_key": "",
+  "host": "flights-sky.p.rapidapi.com",
+  "proxy": ""
+}
