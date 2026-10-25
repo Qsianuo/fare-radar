@@ -71,6 +71,33 @@
 
 ## Test（Tester 填）
 
+- 测试人: Tester | 日期: 2026-10-25 | 环境: main @ 1f386bf（tag v1.4.0），Windows + Git Bash + Python 3.10
+- 方式: `python src/webapp.py --port 8082` 起服务，urllib/curl 黑盒实测（不读实现）；单测全量复跑；CLI 同源抽查。依据 docs/02-PRD-v1.4.md 第 10 节 AC1~AC8 与 docs/handoffs/handoff-dev-api-v14.md 契约。
+- 单测: `python -m unittest discover tests` → **Ran 117 tests in 0.400s / OK**（与 PR-011 评审记录一致）。
+
+### 六点需求逐项验证（全部通过）
+
+- 【1 航班 6 要素 + 时段覆盖】通过。任抽 3 条航线（SHA→JJN 11-15、PEK→CAN 11-16、URC→OHE 11-17）全部航班行含 depart_time/arrive_time（HH:MM 格式校验通过）、duration_text（如"1小时35分"）、dep/arr_airport（与 /api/cities 注册表机场全称逐字一致）、carrier_code/carrier_name（如"春秋 9C"/"吉祥 HO"）、flight_no（两字码+4 位数字）。时段不变式：航司直连单渠道查询每航线 3 班、早/午/晚各≥1（SHA→JJN：HO6200 11:05 早 / 9C8123 14:35 午 / HO5917 20:45 晚；PEK→CAN：CA6070 10:45 / CA6429 13:05 / CZ1670 20:50；CTU→KMG：CZ9764 08:20 / HO6144 13:05 / HU7887 19:55）。券行（直播闪购）时间/航班号为 null——handoff 第 8 节既定裁定。同查询两次响应逐字节一致（确定性无随机）。
+- 【2 多航司聚合去重】通过。30 航线×2 日期共 60 条合并行扫描：结果集内 flight_no 零重复、channel_count==len(channel_names)、合并行 total_estimate==各渠道同航班号最低值（抽查 SHA→JJN HO5917：airline 547 ＜ ota 571 → 合并行 547、channel_names=["OTA 比价","航司直连"]、note 含"另有 1 个渠道有售"）；单渠道查询 channel_count 全为 1（同渠道多班次不合并）；特价票行与券行 channel_count 恒 1（不参与去重）。
+- 【3 固定特价票 + 次卡】通过。/api/deals special_fares 恒 21 条，(日期,目的码,票价,显示名) 与 PRD 7.1 表**逐字一致**（含"黔江(重庆)"照抄），label="特价票·不含机建燃油费｜省 ¥41"；search 命中抽查 3 条（SHA→JJN 10-27 ¥179、SHA→JIQ 10-27 ¥339 显示"特价票 上海→黔江(重庆)"、SHA→HTN 10-29 ¥1049）票面价与标签一致。仅固定日期可售：改日期（JJN 10-28、CKG 11-15、SHE 10-30）is_special_fare 行均为 0。次卡以 card_hints 独立返回且不计入 offers（SHA→HRB 11-15 命中 5 张：DY-101/103/104/105/106，offers 票源集合不含团购）；6 张团购卡卡名与 PRD 7.2 逐字一致（"潮汕"照抄）；"退改规则未披露"卡 4 张存在（DY-101/104/105/106，refund 以"退改规则未披露"开头）；售罄卡 DY-103 stock="售罄"；有效期命中正确（DY-102 秋冬单次卡 2026-12-15 命中、11-15 不命中）。
+- 【4 税费与到手价】通过。全部报价 fee_breakdown.airport_fee=50；燃油分档边界两侧各验一条：SHA→WUH（大圆 688km）fuel_fee=20、PEK→XIY（930km）fuel_fee=40；total_estimate == 票面 +（已含?0:机建50+燃油）逐行成立（3 航线全量）；offers 按 total_estimate 升序且 offers[0].is_lowest=true；included_desc 二态正确（"已含机建+燃油"/"另加机建 ¥50 + 燃油 ¥20"），特价票固定"不含机建燃油费"。
+- 【5 渠道链接】通过。/api/sources、/api/deals（特价票+全部卡）、/api/search（offers 行与 card_hints）中 douyin_miniapp 与 douyin_groupbuy 的 entry_url 均逐字为 `https://v.douyin.com/USSyX47SP7s/`；airline entry_url 为空串（不渲染链接）。
+- 【6 城市全集】通过。/api/cities count=50、零国际城市（HKG/KIX/NRT/ICN/BKK 不返回）、(code,name,airport) 与 PRD 第 4 节 50 行**逐字一致**。已下线城市收藏兼容：POST /api/watch/set SHA→HKG 成功 → watch/list 该行 retired=true、status_note="城市已下线（v1.4 城市全集收缩），不再参与比价与提醒：香港"、current_lowest=null；watch/check 该行 status=retired、text="城市已下线（v1.4 城市全集收缩）：香港；不参与比价与提醒，可删除或改藏其他航线。"（不报错、不静默删除）；直接查询 SHA→HKG 返回 200 + empty_hint"城市码 HKG（香港，城市已下线）不在已支持的 50 城清单中"。测后已删除该收藏。
+
+### 既有能力不回退（AC8，全部通过）
+
+- 准入规则：8 条闪购池航线×5 日期定向扫描 20 条券行——带"已售罄，暂时抢不到"/"有效期不覆盖 YYYY-MM-DD 出发"的行 is_lowest 全部 false；有效期覆盖内（10-25~10-27）且最便宜的券正常持最低价（如 SHA→PEK 10-26 ¥508）；券行 is_deal=true、无航班字段、channel_count=1。
+- 错误路径：search/trend 缺参、同城、坏日期、过去日期、未知票源 → 400+中文；未知 GET 路径 404；watch POST 缺 to/同城/负底价/非数字底价 → 400。
+- alerts 损坏拒写：写入坏 JSON 后 watch list/check/set/remove 全部 409（"收藏文件 alerts.json 已损坏，操作已取消（你的数据未被改动）…"）、文件内容未变、search 降级为 warning 继续出价；测后删除 alerts.json。
+- 诚实声明：search/deals notice 逐字（"[演示数据] …到手价=票面价+机建+燃油…"）；"税费另计"在 search/deals 响应零命中（退役）；webapp.html 零"模拟"、零国际城市；/api/trend 24 点、price_basis="到手价（票面+机建+燃油）"；覆盖不变式（5 航线抽查：每渠道有报价或已列原因，groupbuy 原因含"卡类渠道"）。
+- CLI 同源抽查：`search --from SHA --to JJN --date 2026-11-15` 输出 6 要素表格（时间/机场/航班号/税费/到手价首列）+ 卡提示块，与 API 同词表。
+
+### 观察（不构成新 Issue）
+
+- 观察①（设计内）：全渠道合并视图中合并行的 source_id 归属到手最低价渠道（PRD 第 6 节"保留到手最低价者的全部字段"），故按 source_id 统计各渠道班次会低估航司直连——时段覆盖验证须用单渠道查询（每航线 3 班成立）。
+- 观察②（v1.3 既有行为，非 v1.4 回归）：watch/set 接受注册表外三字码（如 ZZZ，仅校验格式）——v1.3.1 即如此，且已下线城市收藏兼容（HKG 可 set）依赖此行为，维持现状。
+- **总体结论：v1.4.0 六点需求逐项通过、既有能力无回退、单测 117 例全绿，达到 Test 环节放行条件（待产品评审人 User Acceptance）。**
+
 ## User Acceptance（User 填）
 
 ## Closed（PM 填，关联 PR/版本）

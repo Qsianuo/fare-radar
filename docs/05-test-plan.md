@@ -282,3 +282,38 @@ P0 验收标准（search 合并排序与标记、deals 五要素与兜底、模�
 - 观察②（契约改进建议）：POST /api/watch/* 的参数走 URL 查询串、表单体不解析（返回 400）——与前端 `api()` 封装一致、非缺陷；建议契约文档补一句"参数一律 query string"。
 - 观察③（测试状态记录）：期间一次"CLI 删除未找到"为手工恢复 alerts.json 只写回单条所致，重建状态后双向删除同步复验正常。
 - **总体结论：v1.3.0 API 层逐点通过，既有能力无回退，单测 60 例全绿，未发现新问题，达到 Test 环节放行条件（待产品评审人 User Acceptance）。**
+
+---
+
+## 九、v1.4.0 回归记录（Tester，2026-10-25，API 层黑盒）
+
+对象：main @ 1f386bf（PR-011 合并后，tag v1.4.0），ISSUE-011 六点批次。依据：docs/02-PRD-v1.4.md 第 10 节 AC1~AC8、docs/handoffs/handoff-dev-api-v14.md 契约。方式：`python src/webapp.py --port 8082` 起服务，urllib/curl 黑盒实测（不读实现）；CLI 同源抽查；单测全量复跑。逐点证据已写入 issues/ISSUE-011.md 的 Test 节。
+
+### 9.1 六点需求验收（AC1~AC7 的 API 面）
+
+| 验收点 | 结果 |
+|---|---|
+| AC1 城市全集 | 通过：/api/cities count=50、零 HKG/KIX/NRT/ICN/BKK、(码,名,机场全称) 与 PRD 第 4 节 50 行逐字一致；SHA→HKG 查询 200+empty_hint"城市已下线"；watch set SHA→HKG 后 list retired=true+status_note、check status=retired 不报错（测后删除） |
+| AC2 航班字段 | 通过：3 条航线全航班行含 HH:MM 时刻/时长/起降机场全称/承运人/航班号；航司直连单渠道每航线 3 班、早/午/晚各≥1（SHA→JJN 11:05/14:35/20:45 等）；两次查询逐字节一致（确定性）；券行时间字段 null（既定裁定） |
+| AC3 多航司与去重 | 通过：承运人含 CA/MU/CZ/HU/9C/HO 名册标注；30 航线×2 日期 60 条合并行 flight_no 零重复、channel_count==len(channel_names)、合并行到手价==各渠道最低（HO5917：547＜571 取 547+"另有 1 个渠道有售"）；单渠道查询 cc 恒 1；特价票/券不参与去重 |
+| AC4 特价票 | 通过：21 条 (日期,目的码,价,显示) 与 PRD 7.1 逐字一致（含"黔江(重庆)"）；search 命中抽查 3 条价/标签一致（"省 ¥41""不含机建燃油费"）；改日期 3 组零命中（仅固定日期可售） |
+| AC5 卡类产品 | 通过：6 张团购卡卡名/价格与 PRD 7.2 逐字一致、"潮汕"照抄；card_hints 独立于 offers（SHA→HRB 命中 5 张，offers 票源无团购）；"退改规则未披露"卡 4 张显著；售罄卡 DY-103；单次卡按有效期+航线命中（DY-102 命中 12-15 不命中 11-15）；闪购卡 4 张带 route_text |
+| AC6 税费与到手价 | 通过：机建恒 50；燃油边界两侧各一条（SHA→WUH 688km→20、PEK→XIY 930km→40）；total_estimate==票面+(已含?0:50+燃油) 全行成立；offers 升序且 offers[0].is_lowest=true；included_desc 二态正确 |
+| AC7 渠道入口 | 通过：miniapp/groupbuy 的 entry_url 在 sources/deals/search（offers+card_hints）均逐字为 https://v.douyin.com/USSyX47SP7s/；airline 空串 |
+
+### 9.2 既有能力回归（AC8）
+
+| 检查点 | 结果 |
+|---|---|
+| 准入规则 | 通过：闪购池 8 航线×5 日期 20 条券行——售罄/有效期不覆盖行 is_lowest 全 false；覆盖内最便宜券正常持最低价（SHA→PEK 10-26 ¥508） |
+| 错误路径 | 通过：缺参/同城/坏日期/过去日期/未知票源 400+中文、未知路径 404、watch POST 缺参/负底价/非数字 400 |
+| alerts 损坏保护 | 通过：坏 JSON 后 list/check/set/remove 全 409 且文件未改写、search 降级 warning；测后删除 alerts.json |
+| 诚实声明与红线 | 通过：notice 逐字、"税费另计"零命中（退役）、webapp.html 零"模拟"零国际城市、trend 到手价口径 24 点、覆盖不变式（渠道有报价或列原因，groupbuy"卡类渠道"） |
+| CLI 同源 | 通过：search 表格含 6 要素/到手价首列/卡提示块，与 API 同词表 |
+
+### 9.3 单测与观察
+
+- 单测：`python -m unittest discover tests` → **Ran 117 tests in 0.400s / OK**（60→117 与 PR-011 新增一致）。
+- 观察①（设计内，非缺陷）：合并行 source_id 归属到手最低价渠道（PRD 第 6 节），按 source_id 统计各渠道班次会低估航司直连；时段覆盖以单渠道查询验证为准（每航线 3 班成立）。
+- 观察②（v1.3 既有行为，非 v1.4 回归）：watch/set 接受注册表外三字码（v1.3.1 即仅校验格式），已下线城市收藏兼容依赖此行为，维持现状。
+- **总体结论：v1.4.0 六点需求逐项通过、既有能力无回退、单测 117 例全绿，未发现 v1.4 引入的新问题，达到 Test 环节放行条件（待产品评审人 User Acceptance）。**
