@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """低价票雷达 FareRadar —— 单文件 CLI 入口：python src/fareradar.py <search|deals|watch>。
 
-输出铁律：含价格的输出首行必标演示数据声明；字段缺失显示"未披露"；
+输出铁律：含价格的输出首行必标数据来源声明；字段缺失显示"未披露"；
 全中文；关键标记用文字符号，不依赖 ANSI 颜色。
 
-v1.4 口径：每条报价含航班 6 要素（起飞/到达时间、起降机场、航班号、承运人），
-费用明细（机建+燃油）与到手价由引擎统一附加；排序/最低价/提醒全部以
-到手价（票面+机建+燃油）为唯一口径（PRD v1.4 第 8 节，修订 ISSUE-001 裁定）。
+v1.5.0 口径（ISSUE-012 修复裁定）：比价行仅来自实测快照（snapshot_pack，
+人工核验、逐行标注来源）与真实商品（21 条固定特价票/次卡卡池）；引擎编造
+的正班/代理/引流/闪购行全部退场；航班号为"数据模型→票源→渲染"一等字段，
+展示统一"南航 CZ9782"格式（禁止承运人二字码重复拼接）；快照为静态数据，
+演示波动在比价行全面移除，"临近日期最低价条"用快照真实数据实现。
 """
 
 import argparse
@@ -16,7 +18,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from sources import all_sources, cities, fees, source_by_id
+from sources import all_sources, cities, fees, snapshot_pack, source_by_id
 
 try:  # Windows 控制台默认 GBK，强制 UTF-8 防中文乱码（交接坑提示 1）
     for _stream in (sys.stdout, sys.stderr):
@@ -31,9 +33,10 @@ DISCLOSE = "未披露，下单前请在购买页确认"
 REFUND_UNDISCLOSED = "退改规则未披露"
 REFUND_DISCLOSE = ("商家未公布退改规则，此类商品风险最高；"
                    "下单前务必在抖音购买页核对退改条款，并截图留证")
-SIM_NOTICE = ("[演示数据] 以下价格来自内置演示票源，非真实报价；"
-              "到手价=票面价+机建+燃油（价格含分钟级演示波动），不能用于实际购票。")
-DEALS_NOTICE = "[演示数据] 以下特价票与卡类商品来自内置演示票源，非真实商品，不能直接购买。"
+DATA_NOTICE = ("[实测快照] 以下比价数据来自人工核验的实测快照与真实商品（来源逐行标注，"
+               "静态数据不随查询时刻变化）；到手价=票面价+机建+燃油，不能用于实际购票。")
+DEALS_NOTICE = ("[真实商品] 以下特价票与卡类商品信息来自评审人提供的真实商品（抖音渠道截图），"
+                "本工具不提供购买；请以抖音购买页为准。")
 WATCH_USAGE = "示例：watch --from SHA --to PEK --price 700"
 
 
@@ -61,6 +64,20 @@ def disclose(value, fallback=DISCLOSE):
     """诚实披露兜底：空/缺失字段禁止留空，统一显示"未披露"。"""
     text = str(value).strip() if value is not None else ""
     return text or fallback
+
+
+def flight_display(offer):
+    """航班号一等字段的展示名（ISSUE-012 问题 1/3）：统一"南航 CZ9782"格式。
+
+    航班号本身已含承运人二字码（如 CZ9782 / CA4270|CA4349），展示时只拼
+    承运人中文名——禁止再现"南航 CZ · CZ9782"式二字码重复拼接；无航班号的
+    行（特价票卡面未展示/卡类）返回空串，由调用方按"未披露"兜底。
+    """
+    flight_no = offer.get("flight_no")
+    if not flight_no:
+        return ""
+    carrier_name = (offer.get("carrier_name") or "").strip()
+    return f"{carrier_name} {flight_no}" if carrier_name else flight_no
 
 
 def card_refund_text(card):
@@ -118,10 +135,12 @@ def collect(sources, origin, destination, date):
     """逐源收集报价 → 统一附加费用/到手价 → 跨渠道去重（规则唯一来源）。
 
     返回 (offers, failed, unavailable)：
-    - unavailable：本次"覆盖不含此航线/当日无座/卡类渠道不出航班"的渠道
-      [{source_id, name, reason}]，与 failed（适配器异常降级）语义不同；
-    - 比价行由引擎统一附上所在渠道 entry_url/entry_note 与 fee_breakdown/
-      total_estimate（距离取注册表大圆距离）；
+    - unavailable：本次"覆盖不含此航线/卡类渠道不出航班/未接入"的渠道
+      [{source_id, name, reason, status}]，与 failed（适配器异常降级）语义
+      不同；status="not_available" 的渠道是"暂无合规公开接口，未接入"；
+    - 比价行由引擎统一附上所在渠道 entry_url/entry_note；费用明细/到手价
+      仅对未自带 total_estimate 的行按费用引擎附加（距离取注册表大圆距离），
+      实测快照行自带实测含税价（fee_breakdown 已标注来源），引擎不覆盖；
     - 去重（PRD v1.4 第 6 节）：键=出发日期+航班号，仅跨渠道合并，保留到手
       最低价并标注 channel_count；同渠道多班次、券/特价票/卡不参与。
     """
@@ -132,12 +151,13 @@ def collect(sources, origin, destination, date):
             available, reason = source.availability(origin, destination, date)
             if not available:
                 unavailable.append({"source_id": source.source_id,
-                                    "name": source.display_name, "reason": reason})
+                                    "name": source.display_name, "reason": reason,
+                                    "status": getattr(source, "status", "active")})
                 continue
             for offer in source.search(origin, destination, date):
                 offer["entry_url"] = source.entry_url
                 offer["entry_note"] = source.entry_note
-                if km is not None:
+                if offer.get("total_estimate") is None and km is not None:
                     offer["fee_breakdown"] = fees.fee_breakdown(
                         offer["price"], offer.get("tax_included", True), km,
                         offer.get("included_desc"))
@@ -349,8 +369,14 @@ def _unknown_city_text(codes):
 
 def _time_text(offer):
     if offer.get("depart_time") and offer.get("arrive_time"):
-        return f"{offer['depart_time']}→{offer['arrive_time']}"
+        cross = "(+1)" if offer.get("cross_day") else ""
+        return f"{offer['depart_time']}→{offer['arrive_time']}{cross}"
     return "—"
+
+
+def _flight_text(offer):
+    """航班/套餐列：有航班号的行展示"厦航 MF8753"，否则展示产品名。"""
+    return flight_display(offer) or offer["product"]
 
 
 def _airport_text(offer):
@@ -381,26 +407,39 @@ def cmd_search(args):
     sources = _selected_sources(args.source)
 
     offers, failed, unavailable = collect(sources, origin, destination, date)
-    print(SIM_NOTICE)
+    print(DATA_NOTICE)
     weekday = "一二三四五六日"[date.weekday()]
     print(f"航线：{city(origin)} → {city(destination)}   日期：{date.isoformat()}（周{weekday}）")
     for name in failed:
         print(f"[提示] {name} 暂不可用，已跳过（不影响其他票源）。")
-    if unavailable:
-        detail = "、".join(f"{u['name']}（{u['reason']}）" for u in unavailable)
+    not_integrated = [u for u in unavailable if u.get("status") == "not_available"]
+    if not_integrated:
+        names = "、".join(u["name"] for u in not_integrated)
+        print(f"未接入渠道（暂无合规公开接口）：{names}")
+    on_sale_off = [u for u in unavailable if u.get("status") != "not_available"]
+    if on_sale_off:
+        detail = "、".join(f"{u['name']}（{u['reason']}）" for u in on_sale_off)
         print(f"以下渠道本次无销售：{detail}")
     hints = card_hints(origin, destination, date, sources)
     if hints:
         _print_card_hints(hints)
+    nearby = snapshot_pack.nearby_lowest(origin, destination)
+    if nearby:
+        bar = "｜".join(f"{point['label']} ¥{point['price']}" for point in nearby)
+        print(f"临近日期最低价（裸价，来源：{snapshot_pack.DATA_SOURCE}）：{bar}")
     if not offers:
         unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
+        snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)
         if unknown:
             print(_unknown_city_text(unknown))
+        elif snapshot_selected and not snapshot_pack.is_covered(origin, destination, date):
+            print(f"该航线暂无真实数据快照；当前收录范围：{snapshot_pack.coverage_text()}。")
+            print("可到航旅纵横/航司官网等官方渠道查询实时报价。")
         elif unavailable and not failed:
             print("本次查询所选渠道均无销售，原因见上；可更换日期或航线再试。")
         else:
             names = "、".join(s.display_name for s in sources)
-            print(f"该航线暂无可用报价（已接入票源：{names}）。")
+            print(f"该航线暂无可用报价（已登记票源：{names}）。")
         return 0
 
     offers = rank_offers(offers, date)
@@ -416,7 +455,7 @@ def cmd_search(args):
     if lowest is None:
         print("本次结果中没有可竞争的最低价（原因见各行备注）。")
     print_table(("到手价", "票面价", "票源", "航班/套餐", "时间", "机场", "税费", "备注"),
-                [(f"¥{total_price(o)}", f"¥{o['price']}", o["source_name"], o["product"],
+                [(f"¥{total_price(o)}", f"¥{o['price']}", o["source_name"], _flight_text(o),
                   _time_text(o), _airport_text(o), _fee_text(o), search_note(o, date))
                  for o in offers], mark_index=offers.index(lowest) if lowest else None)
     return 0
@@ -454,9 +493,11 @@ def cmd_deals(args):
     print(f"特价票与卡类专区｜航线过滤：{scope}")
     print(f"—— 固定特价票（{len(specials)} 条｜渠道：抖音小程序·春秋航空｜仅固定日期可售）——")
     if specials:
+        # 卡面未展示航班号/时刻：按"未披露"诚实渲染，禁止用生成值填充（ISSUE-012）
         print_table(("日期", "航线", "票价", "航班", "时间", "标签"),
                     [(s["date"], f"上海→{s['destination_display']}", f"¥{s['price']}",
-                      s["flight_no"], f"{s['depart_time']}→{s['arrive_time']}",
+                      disclose(s.get("flight_no"), "未披露（以下单页为准）"),
+                      disclose(s.get("depart_time"), "未披露（以下单页为准）"),
                       "特价票·不含机建燃油费｜省 ¥41") for s in specials])
     else:
         print("当前过滤无特价票；去掉过滤参数可查看全部 21 条固定特价票。")
@@ -488,7 +529,7 @@ def _watch_set(args, alerts):
                    "created_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M")})
     save_alerts(alerts)
     print(f"已保存收藏：{city(origin)} → {city(destination)}，底价 ¥{threshold}。")
-    print("每次 search 或 watch 时自动比对（演示数据，按到手价判断），命中即输出 [低价提醒]。")
+    print("每次 search 或 watch 时自动比对（快照数据，按到手价判断），命中即输出 [低价提醒]。")
     return 0
 
 
@@ -508,12 +549,12 @@ def _watch_remove(args, alerts):
 
 
 def _watch_check(alerts):
-    print(SIM_NOTICE)
+    print(DATA_NOTICE)
     if not alerts:
         print(f"暂无收藏航线。{WATCH_USAGE}，再运行 watch 检查。")
         return 0
     date = dt.date.today() + dt.timedelta(days=1)
-    print(f"检查 {len(alerts)} 条收藏航线｜按明天（{date.isoformat()}）出发的演示到手价判断")
+    print(f"检查 {len(alerts)} 条收藏航线｜按明天（{date.isoformat()}）出发的到手价判断")
     print(LINE)
     hits = 0
     for a in alerts:
@@ -578,17 +619,18 @@ def cmd_watch(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="fareradar",
-        description="低价票雷达：6 航司正班、OTA 比价与抖音系票源放在一起比（内置演示数据，不能购票）。",
-        epilog="示例：python src/fareradar.py search --from SHA --to PEK --date 2026-11-15",
+        description="低价票雷达：实测快照与真实特价票/卡类商品比价（数据逐行标注来源，不能购票）。",
+        epilog="示例：python src/fareradar.py search --from INC --to CAN --date 2026-11-01",
     )
     sub = parser.add_subparsers(dest="command")
 
-    p_search = sub.add_parser("search", help="搜索比价：到手价升序，含时间/机场/航司/税费明细")
-    p_search.add_argument("--from", dest="from_code", help="出发三字码，如 SHA")
-    p_search.add_argument("--to", dest="to_code", help="到达三字码，如 PEK")
+    p_search = sub.add_parser("search", help="搜索比价：到手价升序，含时间/机场/航班号/税费明细")
+    p_search.add_argument("--from", dest="from_code", help="出发三字码，如 INC")
+    p_search.add_argument("--to", dest="to_code", help="到达三字码，如 CAN")
     p_search.add_argument("--date", help="出发日期 YYYY-MM-DD")
     p_search.add_argument("--source",
-                          help="只查指定票源（airline / ota / douyin_groupbuy / douyin_miniapp / douyin_live）")
+                          help="只查指定票源（snapshot_pack / airline / ota / douyin_groupbuy /"
+                               " douyin_miniapp / douyin_live；未接入渠道仅返回状态提示）")
     p_search.set_defaults(func=cmd_search)
 
     p_deals = sub.add_parser("deals", help="特价票清单+次卡/省钱卡/闪购卡卡面（含退改披露）")

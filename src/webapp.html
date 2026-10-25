@@ -135,28 +135,21 @@ input[type=number]{width:140px}
 /* ================= 首页价格仪表 ================= */
 .gauge-card{background:linear-gradient(180deg,#ffffff,#fbfcff);border:1px solid var(--line);
   border-radius:var(--r-l);box-shadow:var(--sh-3);padding:22px 24px 18px;margin-bottom:4px}
-.gauge-top{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:24px;align-items:center}
 .gauge-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
   color:var(--muted);letter-spacing:1px}
 .gauge-price{margin:6px 0 2px;font-size:64px;line-height:1.05;font-weight:800;color:var(--ink);
   letter-spacing:-1px;font-variant-numeric:tabular-nums}
 .gauge-route{font-size:16px;font-weight:600;color:var(--ink-2)}
 .gauge-date{margin-top:2px;font-size:13px;color:var(--muted)}
-.gauge-side{display:flex;flex-direction:column;align-items:center}
-#gauge-arc svg{width:230px;height:auto;display:block}
-.arc-label{font-size:12px;fill:var(--muted);font-variant-numeric:tabular-nums}
-.arc-mid{font-size:11px;fill:#a3adc2;letter-spacing:3px}
-.tag-demo{display:inline-block;font-size:11px;font-weight:600;color:#8a5a00;
-  background:var(--gold-soft);border:1px solid var(--gold-line);padding:1px 9px;border-radius:999px}
 .chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   margin:16px 0 6px;padding-top:14px;border-top:1px dashed var(--line-2)}
 .chart-title{font-size:14px;font-weight:700;color:var(--ink-2)}
-.refresh{display:inline-flex;align-items:center;gap:6px;margin-left:auto;
-  font-size:12.5px;font-weight:600;color:var(--ink-2)}
-.refresh select{padding:5px 8px;font-size:12.5px;border-radius:7px}
-.updated{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-.trend-box svg{width:100%;height:auto;display:block}
-.chart-label{font-size:11px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.nearby-box{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.nearby-item{flex:1 1 120px;max-width:170px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--r-s);padding:10px 12px;text-align:center}
+.nearby-item.current{border-color:var(--brand);background:var(--brand-soft)}
+.nearby-price{font-size:20px;font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+.nearby-date{margin-top:2px;font-size:12px;color:var(--muted)}
 .chart-notice{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
 .chart-empty{margin:0;padding:30px 0;text-align:center;font-size:13px;color:var(--muted)}
 .chart-error{color:var(--bad)}
@@ -212,6 +205,9 @@ tr.row-lowest .price{font-size:21px;color:var(--brand-strong)}
   margin-left:0;margin-bottom:4px}
 .chip-channel{background:var(--brand-soft);color:var(--brand-strong);border:1px solid #d4e0f8;
   margin-left:0;margin-top:5px}
+.chip-na{background:var(--surface-2);color:var(--muted);border:1px solid var(--line);
+  margin-left:0;opacity:.75}
+.source-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px}
 .chip-plus1{background:var(--brand-deep);color:#fff;border:1px solid var(--brand-deep);
   margin-left:5px;vertical-align:0}
 .chip-stock{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);margin-left:10px}
@@ -292,8 +288,6 @@ tr.row-lowest .price{font-size:21px;color:var(--brand-strong)}
 @keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
 .skel-line{height:14px;margin:15px 16px}
 .w60{width:60%}.w80{width:80%}
-.skel-arc{width:230px;height:120px;border-radius:12px}
-.skel-chart{height:170px;margin-top:6px;border-radius:10px}
 .skel-card{height:190px;border-radius:var(--r-m)}
 .skel-row{height:64px;margin:0;border-radius:var(--r-m)}
 
@@ -309,8 +303,6 @@ footer p{margin:4px 0 0}
 
 /* ================= 响应式：平板（≤1024）与手机（≤640） ================= */
 @media (max-width:1024px){
-  .gauge-top{grid-template-columns:1fr;justify-items:start}
-  .gauge-side{flex-direction:row;align-items:center;gap:20px}
   .gauge-price{font-size:54px}
   .table-scroll{overflow-x:auto}
 }
@@ -323,7 +315,6 @@ footer p{margin:4px 0 0}
   .tab{flex:0 0 auto;padding:8px 14px;font-size:13px}
   .gauge-card{padding:18px 16px 14px}
   .gauge-price{font-size:44px}
-  #gauge-arc svg{width:200px}
   .toolbar{flex-direction:column;align-items:stretch}
   .route-fields .field{flex:1 1 calc(50% - 10px)}
   .route-fields .field select{width:100%;min-width:0}
@@ -331,7 +322,6 @@ footer p{margin:4px 0 0}
   .toolbar .btn.primary{width:100%}
   input[type=date]{min-width:0}
   input[type=number]{width:100%}
-  .refresh{margin-left:0}
   .card-hints{padding:14px}
   .hints-grid{grid-template-columns:1fr}
   .cards{grid-template-columns:1fr}
@@ -355,7 +345,7 @@ footer p{margin:4px 0 0}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="12" r="9"/><path d="M12 8h.01M12 11.5V16"/>
         </svg>
-        演示数据 · 非真实报价，不能用于实际购票
+        实测快照数据 · 不能用于实际购票
       </span>
     </div>
     <p class="hero-sub">多票源比价 · 收藏航线 · 到手价（票面+机建+燃油）一目了然</p>
@@ -382,29 +372,17 @@ footer p{margin:4px 0 0}
   <!-- ============ 页签一：搜索比价（顶部为价格仪表） ============ -->
   <section id="tab-search" class="panel active" aria-label="搜索比价">
     <div class="gauge-card" aria-live="polite">
-      <div class="gauge-top">
-        <div class="gauge-main">
-          <div class="gauge-label">当前最低到手价<span class="tag-demo">演示波动</span></div>
-          <div class="gauge-price" id="gauge-price">—</div>
-          <div class="gauge-route" id="gauge-route"></div>
-          <div class="gauge-date" id="gauge-date"></div>
-        </div>
-        <div class="gauge-side" id="gauge-arc"></div>
+      <div class="gauge-main">
+        <div class="gauge-label">当前最低到手价</div>
+        <div class="gauge-price" id="gauge-price">—</div>
+        <div class="gauge-route" id="gauge-route"></div>
+        <div class="gauge-date" id="gauge-date"></div>
       </div>
       <div class="chart-head">
-        <span class="chart-title">近 24 小时到手价走势</span>
-        <span class="tag-demo">演示波动</span>
-        <label class="refresh">自动刷新
-          <select id="refresh-rate">
-            <option value="30">每 30 秒</option>
-            <option value="60" selected>每 60 秒</option>
-            <option value="0">关闭</option>
-          </select>
-        </label>
-        <span class="updated" id="gauge-updated"></span>
+        <span class="chart-title">临近日期最低价（裸价，不含机建+燃油）</span>
       </div>
-      <div class="trend-box" id="trend-chart"></div>
-      <p class="chart-notice" id="trend-notice"></p>
+      <div class="nearby-box" id="nearby-bar"></div>
+      <p class="chart-notice" id="nearby-notice"></p>
     </div>
 
     <form id="search-form" class="toolbar">
@@ -468,9 +446,9 @@ footer p{margin:4px 0 0}
       <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
       <path d="M12 12l6.3-6.3"/>
     </svg>
-    <span>低价票雷达 FareRadar</span><span class="ver">v1.4.0</span>
+    <span>低价票雷达 FareRadar</span><span class="ver">v1.5.0</span>
   </div>
-  <p>教学演示项目 · 页面与命令行版共用同一套比价规则 · 购买始终发生在航司官网或抖音 App 内</p>
+  <p>教学演示项目 · 比价数据为人工核验的实测快照与真实商品 · 购买始终发生在航司官网或抖音 App 内</p>
 </footer>
 
 <script>
@@ -533,20 +511,17 @@ function localDate(offsetDays) {
   const p = (x) => String(x).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
-function nowTime() {
-  const d = new Date();
-  const p = (x) => String(x).padStart(2, "0");
-  return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+/* 默认日期：快照收录日期未过则用之（用户打开即见真实快照数据），否则回退一周后 */
+function defaultDate() {
+  const snapshotDate = "2026-11-01";
+  return new Date(snapshotDate + "T23:59:59") >= new Date() ? snapshotDate : localDate(7);
 }
 
 /* ---------------- 全局状态 ---------------- */
 const state = {
   cities: [],
   cityMap: new Map(),
-  gaugeParams: null,     // 仪表当前展示的航线/日期（跟随最近一次搜索）
   lastSearch: null,
-  trendTimer: null,
-  trendInterval: 60,     // 秒；0 = 关闭
   dealsLoaded: false,
   watchLoaded: false
 };
@@ -582,6 +557,11 @@ function fillSourceSelect(sources) {
   (sources || []).forEach((s) => {
     const o = new Option(s.name, s.id);
     if (s.description) o.title = s.description;
+    if (s.status === "not_available") {   // 未接入渠道灰化，不假装可查
+      o.disabled = true;
+      o.textContent = s.name + "（未接入）";
+      if (s.reason) o.title = s.reason;
+    }
     sel.append(o);
   });
 }
@@ -592,139 +572,39 @@ $("swap-btn").addEventListener("click", () => {
   t.value = tmp;
 });
 
-/* ---------------- 首页价格仪表 ---------------- */
-function renderGaugeSkeleton() {
-  $("gauge-price").textContent = "—";
-  $("gauge-route").textContent = "";
-  $("gauge-date").textContent = "";
-  const arc = $("gauge-arc");
-  arc.innerHTML = "";
-  arc.append(el("div", "skel skel-arc"));
-  const chart = $("trend-chart");
-  chart.innerHTML = "";
-  chart.append(el("div", "skel skel-chart"));
+/* ---------------- 首页价格仪表（临近日期最低价条，实测快照静态数据） ---------------- */
+function setGauge(data) {
+  const lowest = (data.offers || []).find((o) => o.is_lowest);
+  $("gauge-price").textContent = lowest ? "¥" + lowest.total_estimate : "—";
+  $("gauge-route").textContent = data.route || "";
+  $("gauge-date").textContent = (data.date ? data.date + " 出发" : "")
+    + (data.price_basis ? " · " + data.price_basis : "");
 }
-function polar(cx, cy, r, deg) {
-  const rad = deg * Math.PI / 180;
-  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
-}
-function arcPath(cx, cy, r, a0, a1) {
-  const p0 = polar(cx, cy, r, a0);
-  const p1 = polar(cx, cy, r, a1);
-  const large = (a1 - a0) > 180 ? 1 : 0;
-  return "M " + p0[0].toFixed(2) + " " + p0[1].toFixed(2) +
-    " A " + r + " " + r + " 0 " + large + " 1 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2);
-}
-function renderGaugeArc(low, high, cur) {
-  const box = $("gauge-arc");
+function renderNearby(bar, currentDate) {
+  const box = $("nearby-bar");
   box.innerHTML = "";
-  const svg = sv("svg", { viewBox: "0 0 240 142", role: "img", "aria-label": "今日价格区间仪表" });
-  const defs = sv("defs", {});
-  const grad = sv("linearGradient", { id: "arcGrad", x1: "0", y1: "0", x2: "1", y2: "0" });
-  grad.append(sv("stop", { offset: "0%", "stop-color": "#8fb4ff" }));
-  grad.append(sv("stop", { offset: "100%", "stop-color": "#2456e0" }));
-  defs.append(grad);
-  svg.append(defs);
-  const cx = 120, cy = 118, r = 92;
-  svg.append(sv("path", { d: arcPath(cx, cy, r, 180, 360), fill: "none",
-    stroke: "#e3e8f0", "stroke-width": "12", "stroke-linecap": "round" }));
-  let frac = 0.5;
-  if (high > low) frac = Math.min(1, Math.max(0, (cur - low) / (high - low)));
-  const end = 180 + frac * 180;
-  svg.append(sv("path", { d: arcPath(cx, cy, r, 180, end), fill: "none",
-    stroke: "url(#arcGrad)", "stroke-width": "12", "stroke-linecap": "round" }));
-  const pt = polar(cx, cy, r, end);
-  svg.append(sv("circle", { cx: pt[0].toFixed(2), cy: pt[1].toFixed(2), r: "7",
-    fill: "#2456e0", stroke: "#ffffff", "stroke-width": "3" }));
-  const lab = (x, y, txt, cls) => {
-    const t = sv("text", { x: x, y: y, "text-anchor": "middle", "class": cls });
-    t.textContent = txt;
-    return t;
-  };
-  svg.append(lab(cx - r, cy + 18, "¥" + low, "arc-label"));
-  svg.append(lab(cx + r, cy + 18, "¥" + high, "arc-label"));
-  svg.append(lab(cx, cy - 30, "今日区间", "arc-mid"));
-  box.append(svg);
-}
-function renderTrendChart(points) {
-  const box = $("trend-chart");
-  box.innerHTML = "";
-  if (!points || points.length < 2) {
-    box.append(el("p", "chart-empty", "暂无足够数据绘制走势"));
+  if (!bar || !bar.length) {
+    box.append(el("p", "chart-empty", "该航线暂无临近日期快照数据"));
     return;
   }
-  const W = 640, H = 180, PL = 52, PR = 18, PT = 16, PB = 30;
-  const prices = points.map((p) => p.price);
-  const dMin = Math.min.apply(null, prices);
-  const dMax = Math.max.apply(null, prices);
-  let lo = dMin, hi = dMax;
-  const pad = ((hi - lo) || Math.max(1, hi * 0.02)) * 0.18;
-  lo -= pad; hi += pad;
-  const X = (i) => PL + (W - PL - PR) * i / (points.length - 1);
-  const Y = (p) => PT + (H - PT - PB) * (1 - (p - lo) / (hi - lo));
-  const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "近 24 小时到手价演示走势" });
-  const defs = sv("defs", {});
-  const grad = sv("linearGradient", { id: "areaGrad", x1: "0", y1: "0", x2: "0", y2: "1" });
-  grad.append(sv("stop", { offset: "0%", "stop-color": "rgba(36,86,224,.22)" }));
-  grad.append(sv("stop", { offset: "100%", "stop-color": "rgba(36,86,224,0)" }));
-  defs.append(grad);
-  svg.append(defs);
-  [0.25, 0.5, 0.75].forEach((f) => {
-    const y = PT + (H - PT - PB) * f;
-    svg.append(sv("line", { x1: PL, y1: y, x2: W - PR, y2: y, stroke: "#edf1f7", "stroke-width": "1" }));
+  bar.forEach((p) => {
+    const item = el("div", "nearby-item" + (p.date === currentDate ? " current" : ""));
+    item.append(el("div", "nearby-price", "¥" + p.price));
+    item.append(el("div", "nearby-date", p.label));
+    box.append(item);
   });
-  let linePath = "";
-  points.forEach((p, i) => {
-    linePath += (i ? " L " : "M ") + X(i).toFixed(1) + " " + Y(p.price).toFixed(1);
-  });
-  const areaPath = linePath + " L " + X(points.length - 1).toFixed(1) + " " + (H - PB) +
-    " L " + X(0).toFixed(1) + " " + (H - PB) + " Z";
-  svg.append(sv("path", { d: areaPath, fill: "url(#areaGrad)" }));
-  svg.append(sv("path", { d: linePath, fill: "none", stroke: "#2456e0", "stroke-width": "2.5",
-    "stroke-linejoin": "round", "stroke-linecap": "round" }));
-  const lx = X(points.length - 1), ly = Y(prices[prices.length - 1]);
-  svg.append(sv("circle", { cx: lx.toFixed(1), cy: ly.toFixed(1), r: "4.5",
-    fill: "#2456e0", stroke: "#ffffff", "stroke-width": "2" }));
-  const yl = sv("text", { x: PL - 8, y: Y(dMin) + 4, "text-anchor": "end", "class": "chart-label" });
-  yl.textContent = "¥" + dMin;
-  const yh = sv("text", { x: PL - 8, y: Y(dMax) + 4, "text-anchor": "end", "class": "chart-label" });
-  yh.textContent = "¥" + dMax;
-  const t0 = sv("text", { x: PL, y: H - 8, "class": "chart-label" });
-  t0.textContent = points[0].time;
-  const t1 = sv("text", { x: W - PR, y: H - 8, "text-anchor": "end", "class": "chart-label" });
-  t1.textContent = points[points.length - 1].time;
-  svg.append(yl, yh, t0, t1);
-  box.append(svg);
 }
-async function loadTrend(withSkeleton) {
-  const p = state.gaugeParams || { from: "SHA", to: "CTU", date: localDate(7) };
-  if (withSkeleton) renderGaugeSkeleton();
+async function loadNearby() {
+  const p = state.lastSearch || { from: "INC", to: "CAN", date: defaultDate() };
   try {
-    const d = await api("/api/trend", p);
-    $("gauge-price").textContent = d.current != null ? "¥" + d.current : "—";
-    $("gauge-route").textContent = d.route || "";
-    $("gauge-date").textContent = (d.date ? d.date + " 出发" : "")
-      + (d.price_basis ? " · " + d.price_basis : "");
-    $("gauge-updated").textContent = "更新于 " + nowTime();
-    $("trend-notice").textContent = d.notice || "";
-    const arc = $("gauge-arc");
-    if (d.current != null && d.day_low != null && d.day_high != null) {
-      renderGaugeArc(d.day_low, d.day_high, d.current);
-    } else {
-      arc.innerHTML = "";
-      arc.append(el("p", "chart-empty", "暂无区间数据"));
-    }
-    renderTrendChart(d.points);
+    const d = await api("/api/nearby", p);
+    $("nearby-notice").textContent = d.notice || "";
+    renderNearby(d.bar, d.date);
   } catch (err) {
-    $("gauge-price").textContent = "—";
-    $("gauge-route").textContent = "";
-    $("gauge-date").textContent = "";
-    $("gauge-updated").textContent = "";
-    $("trend-notice").textContent = "";
-    $("gauge-arc").innerHTML = "";
-    const chart = $("trend-chart");
-    chart.innerHTML = "";
-    chart.append(el("p", "chart-empty chart-error", "仪表加载失败：" + err.message));
+    $("nearby-notice").textContent = "";
+    const box = $("nearby-bar");
+    box.innerHTML = "";
+    box.append(el("p", "chart-empty chart-error", "临近日期数据加载失败：" + err.message));
   }
 }
 
@@ -751,12 +631,6 @@ function errorState(title, msg) {
   w.append(el("p", "state-msg", msg));
   return w;
 }
-function setRefreshError(msg) {
-  const box = $("search-status");
-  const old = box.querySelector(".refresh-err");
-  if (old) old.remove();
-  if (msg) box.append(el("div", "notice warn refresh-err", msg));
-}
 function resultMeta(data) {
   const m = el("div", "result-meta");
   m.append(el("span", "meta-route", data.route));
@@ -764,6 +638,18 @@ function resultMeta(data) {
   m.append(el("span", "meta-sub", (data.offers ? data.offers.length : 0)
     + " 个报价 · " + (data.price_basis || "到手价")));
   return m;
+}
+/* ---- 渠道状态 chips：未接入渠道灰化显式声明（ISSUE-012 成功标准 ④） ---- */
+function sourceChips(list) {
+  const wrap = el("div", "source-chips");
+  (list || []).forEach((s) => {
+    const na = s.status === "not_available";
+    const chip = el("span", "chip " + (na ? "chip-na" : "chip-source"),
+      na ? s.name + " · 未接入" : s.name);
+    if (na && s.reason) chip.title = s.reason;
+    wrap.append(chip);
+  });
+  return wrap;
 }
 /* ---- 单元格构造：到手价 / 航班 / 机场 / 票源 ---- */
 function priceCell(o) {
@@ -797,9 +683,11 @@ function flightCell(o) {
   const td = el("td", "cell-flight");
   if (o.is_special_fare) td.append(el("span", "chip chip-special", "特价票·固定航班日期"));
   if (o.flight_no) {
+    // 航班号一等字段：flight_no 自带承运人二字码，只拼承运人中文名——
+    // 禁止"南航 CZ · CZ9782"式重复拼接（ISSUE-012 渲染缺陷）
     const line = el("div", "flight-line");
-    const carrier = [o.carrier_name, o.carrier_code].filter(Boolean).join(" ");
-    line.textContent = carrier ? carrier + " · " + o.flight_no : o.flight_no;
+    const carrier = (o.carrier_name || "").trim();
+    line.textContent = carrier ? carrier + " " + o.flight_no : o.flight_no;
     td.append(line);
   } else {
     const line = el("div", "flight-line");
@@ -919,38 +807,36 @@ function renderSearch(out, data) {
   scroll.append(t);
   out.append(scroll);
 }
-async function runSearch(opts) {
-  const quiet = !!(opts && opts.quiet);
+async function runSearch() {
   const box = $("search-status"), out = $("search-result");
   const from = $("from").value, to = $("to").value,
     date = $("date").value, source = $("source").value;
   state.lastSearch = { from: from, to: to, date: date };
-  if (!quiet) { box.innerHTML = ""; out.innerHTML = ""; out.append(searchSkeleton()); }
+  box.innerHTML = ""; out.innerHTML = ""; out.append(searchSkeleton());
   let data;
   try {
     data = await api("/api/search", { from: from, to: to, date: date, source: source });
   } catch (err) {
-    if (quiet) {
-      setRefreshError("自动刷新失败：" + err.message);
-    } else {
-      box.innerHTML = ""; out.innerHTML = "";
-      out.append(errorState("搜索失败", err.message));
-    }
+    box.innerHTML = ""; out.innerHTML = "";
+    out.append(errorState("搜索失败", err.message));
     return;
   }
-  state.gaugeParams = { from: from, to: to, date: date };
   box.innerHTML = ""; out.innerHTML = "";
-  setRefreshError(null);
   box.append(resultMeta(data));
+  box.append(sourceChips(data.sources_status));   // 渠道接入状态（未接入灰化）
   notice(box, "demo", data.notice);
   if (data.alert_hit) notice(box, "good", data.alert_hit);
   if (data.warning) notice(box, "warn", data.warning);
   (data.failed || []).forEach((n) =>
     notice(box, "warn", "票源「" + n + "」暂不可用，已跳过（不影响其他票源）。"));
-  (data.unavailable_sources || []).forEach((u) =>
-    notice(box, "muted", "渠道「" + u.name + "」本次无销售：" + u.reason));
+  (data.unavailable_sources || []).forEach((u) => {
+    if (u.status !== "not_available") {   // 未接入渠道已由灰化 chip 声明，不重复刷屏
+      notice(box, "muted", "渠道「" + u.name + "」本次无销售：" + u.reason);
+    }
+  });
   renderSearch(out, data);
-  if (!quiet) loadTrend(false);
+  setGauge(data);
+  loadNearby();
 }
 $("search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(); });
 
@@ -972,10 +858,12 @@ function specialFareCard(s) {
   if (s.label) priceRow.append(el("span", "deal-tax", " / " + s.label));  // 卡面口径逐字
   c.append(priceRow);
   const dl = el("dl", "deal-facts");
-  const flight = s.flight_no
-    ? ([s.carrier_name, s.carrier_code].filter(Boolean).join(" ") + " · " + s.flight_no
-      + "，" + (s.depart_time || "—") + " → " + (s.arrive_time || "—"))
-    : "—";
+  // 卡面未展示航班号/时刻：诚实渲染"未披露"，禁止生成值填充（ISSUE-012）
+  const flightNo = s.flight_no
+    ? (((s.carrier_name || "") + " " + s.flight_no).trim() + "，"
+      + (s.depart_time || "—") + " → " + (s.arrive_time || "—"))
+    : "";
+  const flight = flightNo || "未披露（以下单页为准）";
   const airports = [s.dep_airport, s.arr_airport].filter(Boolean).join(" → ");
   [["航班", flight], ["机场", airports], ["说明", s.note]]
     .forEach((kv) => { if (kv[1]) { dl.append(el("dt", null, kv[0])); dl.append(el("dd", null, kv[1])); } });
@@ -1134,57 +1022,23 @@ $("watch-form").addEventListener("submit", async (e) => {
   }
 });
 
-/* ---------------- 自动刷新（页签隐藏时暂停，防累积请求） ---------------- */
-function refreshLive() {
-  loadTrend(false);
-  if (state.lastSearch) runSearch({ quiet: true });
-}
-function setupTimer() {
-  if (state.trendTimer) { clearInterval(state.trendTimer); state.trendTimer = null; }
-  if (state.trendInterval > 0) {
-    state.trendTimer = setInterval(() => {
-      if (!document.hidden) refreshLive();
-    }, state.trendInterval * 1000);
-  }
-}
-$("refresh-rate").addEventListener("change", (e) => {
-  state.trendInterval = Number(e.target.value) || 0;
-  setupTimer();
-});
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    if (state.trendTimer) { clearInterval(state.trendTimer); state.trendTimer = null; }
-  } else {
-    setupTimer();
-    if (state.trendInterval > 0) refreshLive();
-  }
-});
-
-/* ---------------- 初始化：城市/票源 → 仪表 + 首屏搜索 ---------------- */
+/* ---------------- 初始化：城市/票源 → 首屏搜索（快照静态数据，无自动刷新） ---------------- */
 async function init() {
-  $("date").value = localDate(7);
-  state.gaugeParams = { from: "SHA", to: "CTU", date: $("date").value };
-  renderGaugeSkeleton();
-  setupTimer();
+  $("date").value = defaultDate();
   try {
     const results = await Promise.all([api("/api/cities"), api("/api/sources")]);
     state.cities = results[0].cities || [];
     state.cities.forEach((c) => state.cityMap.set(c.code, c.name));
-    fillCitySelect($("from"), "SHA");
-    fillCitySelect($("to"), "CTU");
+    fillCitySelect($("from"), "INC");
+    fillCitySelect($("to"), "CAN");
     fillCitySelect($("deal-from"), "", true);
     fillCitySelect($("deal-to"), "", true);
-    fillCitySelect($("watch-from"), "SHA");
-    fillCitySelect($("watch-to"), "PEK");
+    fillCitySelect($("watch-from"), "INC");
+    fillCitySelect($("watch-to"), "CAN");
     fillSourceSelect(results[1].sources);
-    loadTrend(false);
     runSearch();
   } catch (err) {
     notice($("search-status"), "bad", "页面初始化失败：" + err.message);
-    $("gauge-arc").innerHTML = "";
-    const chart = $("trend-chart");
-    chart.innerHTML = "";
-    chart.append(el("p", "chart-empty chart-error", "仪表加载失败：" + err.message));
   }
 }
 init();

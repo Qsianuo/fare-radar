@@ -2,10 +2,10 @@
 """低价票雷达 FareRadar Web 版：python src/webapp.py [--port 8080] → http://127.0.0.1:<port>
 
 设计约束（PRD 红线"规则唯一来源"）：本文件只做"HTTP 参数 → JSON → 渲染"的
-翻译，全部业务规则（航班 6 要素、费用明细与到手价、跨渠道去重、卡提示、
-准入式最低价、未披露兜底、alerts 数据保护、分钟级演示波动）直接调用
-fareradar.py 与 sources 的同一批函数与适配器，禁止复制规则——网页与 CLI
-必须说同一件事。仅绑定本机回环地址；数据仍为内置演示票源。
+翻译，全部业务规则（航班号一等字段、费用明细与到手价、跨渠道去重、卡提示、
+准入式最低价、未披露兜底、alerts 数据保护）直接调用 fareradar.py 与 sources
+的同一批函数与适配器，禁止复制规则——网页与 CLI 必须说同一件事。仅绑定本机
+回环地址；比价数据为实测快照与真实商品（静态，无演示波动）。
 """
 
 import argparse
@@ -22,7 +22,7 @@ HTML_FILE = SRC / "webapp.html"
 
 sys.path.insert(0, str(SRC))
 import fareradar as fr  # noqa: E402
-from sources import all_sources, cities, pricing, source_catalog  # noqa: E402
+from sources import all_sources, cities, snapshot_pack, source_catalog  # noqa: E402
 
 try:  # 与 CLI 一致：Windows 控制台强制 UTF-8
     for _stream in (sys.stdout, sys.stderr):
@@ -31,7 +31,8 @@ except AttributeError:
     pass
 
 CORRUPTED_MSG = "收藏文件 alerts.json 已损坏，操作已取消（你的数据未被改动）；请先备份修复或删除该文件后重试。"
-TREND_NOTICE = "演示波动：近 24 小时到手价（票面+机建+燃油）为确定性生成的重放，非真实报价。"
+NEARBY_NOTICE = ("临近日期最低价为实测快照静态数据（裸价口径，不含机建+燃油），"
+                 f"来源：{snapshot_pack.DATA_SOURCE}。")
 RETIRED_NOTE = "城市已下线（v1.4 城市全集收缩），不再参与比价与提醒"
 
 
@@ -93,36 +94,24 @@ def _api_sources(_params):
     return 200, {"ok": True, "sources": source_catalog()}
 
 
-def _api_trend(params):
+def _api_nearby(params):
+    """临近日期最低价条（实测快照静态数据，替代原"近 24 小时演示走势"）。"""
     route, err = _route_from_params(params)
     if err:
         return err
     origin, destination, date = route
     if _unknown_city_hint(origin, destination):
         return 400, {"ok": False, "error": _unknown_city_hint(origin, destination)}
-    now_minute = pricing.current_minute()
-    points = []
-    for hours_ago in range(23, -1, -1):
-        bucket = now_minute - hours_ago * 60
-        with pricing.fixed_minute(bucket):  # 确定性重放：把该点的"查询时刻"固定到过去
-            lowest, _failed = _route_lowest(origin, destination, date)
-        if lowest is None:
-            continue
-        stamp = dt.datetime.fromtimestamp(bucket * 60).strftime("%m-%d %H:%M")
-        # v1.4：曲线切换到手价口径（票面+机建+燃油）
-        points.append({"hours_ago": hours_ago, "time": stamp,
-                       "price": fr.total_price(lowest)})
-    prices = [p["price"] for p in points]
+    bar = snapshot_pack.nearby_lowest(origin, destination)
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
         "date": date.isoformat(),
-        "price_basis": "到手价（票面+机建+燃油）",
-        "current": prices[-1] if prices else None,
-        "day_low": min(prices) if prices else None,
-        "day_high": max(prices) if prices else None,
-        "points": points,
-        "notice": TREND_NOTICE,
+        "price_basis": "裸价（不含机建+燃油）",
+        "covered": bool(bar),
+        "bar": bar,
+        "notice": NEARBY_NOTICE if bar else
+                  f"该航线暂无临近日期快照数据；当前收录范围：{snapshot_pack.coverage_text()}。",
     }
 
 
@@ -149,8 +138,9 @@ def _api_search(params):
         "entry_url": o.get("entry_url", ""),
         "entry_note": o.get("entry_note", ""),
         "product": o["product"],
-        "depart_time": o.get("depart_time"),       # 航班 6 要素（券/引流票为 null）
+        "depart_time": o.get("depart_time"),       # 航班 6 要素（特价票/卡为 null）
         "arrive_time": o.get("arrive_time"),
+        "cross_day": bool(o.get("cross_day")),
         "duration_text": o.get("duration_text"),
         "dep_airport": o.get("dep_airport"),
         "arr_airport": o.get("arr_airport"),
@@ -161,6 +151,7 @@ def _api_search(params):
         "channel_count": o.get("channel_count", 1),
         "channel_names": o.get("channel_names", [o["source_name"]]),
         "is_special_fare": bool(o.get("is_special_fare")),
+        "is_snapshot": bool(o.get("is_snapshot")),
         "note": fr.search_note(o, date),           # 含"另有 N 个渠道有售"
         "risk_flags": fr.risk_flags(o, date),
         "is_deal": bool(o.get("is_deal")),
@@ -183,18 +174,25 @@ def _api_search(params):
 
     empty_hint = None
     if not rows:
+        snapshot_selected = any(s.source_id == snapshot_pack.SOURCE_ID for s in sources)
         empty_hint = (_unknown_city_hint(origin, destination)
-                      or ("本次查询所选渠道均无销售，原因见 unavailable_sources。"
-                          if unavailable else "该航线暂无可用报价（已接入票源见 /api/sources）。"))
+                      or (f"该航线暂无真实数据快照；当前收录范围：{snapshot_pack.coverage_text()}。"
+                          if snapshot_selected
+                          and not snapshot_pack.is_covered(origin, destination, date)
+                          else ("本次查询所选渠道均无销售，原因见 unavailable_sources。"
+                                if unavailable else
+                                "该航线暂无可用报价（已登记票源见 /api/sources）。")))
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
         "date": date.isoformat(),
         "weekday": f"周{'一二三四五六日'[date.weekday()]}",
         "price_basis": "到手价（票面+机建+燃油）",
-        "notice": fr.SIM_NOTICE,
+        "notice": fr.DATA_NOTICE,
         "failed": failed,
-        "unavailable_sources": unavailable,  # 覆盖外/当日无座/卡类渠道（区别于 failed 异常）
+        "unavailable_sources": unavailable,  # 覆盖外/卡类/未接入渠道（区别于 failed 异常）
+        "sources_status": [{"id": s["id"], "name": s["name"], "status": s["status"],
+                            "reason": s["reason"]} for s in source_catalog()],
         "card_hints": hints,                 # 命中的次卡/省钱卡（不计入 offers）
         "offers": rows,
         "alert_hit": alert_hit,
@@ -217,13 +215,14 @@ def _api_deals(params):
         "route_text": f"上海→{s['destination_display']}",
         "date": s["date"],
         "price": s["price"],
-        "depart_time": s["depart_time"],
-        "arrive_time": s["arrive_time"],
-        "flight_no": s["flight_no"],
-        "carrier_code": s["carrier_code"],
-        "carrier_name": s["carrier_name"],
-        "dep_airport": s["dep_airport"],
-        "arr_airport": s["arr_airport"],
+        # 卡面未展示航班号/时刻/机场：出 null，前端按"未披露"渲染（禁止编造）
+        "depart_time": s.get("depart_time"),
+        "arrive_time": s.get("arrive_time"),
+        "flight_no": s.get("flight_no"),
+        "carrier_code": s.get("carrier_code"),
+        "carrier_name": s.get("carrier_name"),
+        "dep_airport": s.get("dep_airport"),
+        "arr_airport": s.get("arr_airport"),
         "label": "特价票·不含机建燃油费｜省 ¥41",
         "note": "特价票·固定航班日期·不含机建燃油费",
         "entry_url": s.get("entry_url", ""),
@@ -366,13 +365,13 @@ def _api_watch_check(_params):
             lines.append({"route": route, "status": "wait",
                           "text": f"当前最低到手价 ¥{fr.total_price(lowest)}，"
                                   f"未达底价 ¥{threshold}，继续等待。"})
-    return 200, {"ok": True, "date": date.isoformat(), "notice": fr.SIM_NOTICE, "lines": lines}
+    return 200, {"ok": True, "date": date.isoformat(), "notice": fr.DATA_NOTICE, "lines": lines}
 
 
 GET_APIS = {
     "/api/cities": _api_cities,
     "/api/sources": _api_sources,
-    "/api/trend": _api_trend,
+    "/api/nearby": _api_nearby,
     "/api/search": _api_search,
     "/api/deals": _api_deals,
     "/api/watch/list": _api_watch_list,
@@ -431,7 +430,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"低价票雷达 Web 版已启动：http://{args.host}:{args.port}")
-    print("数据为内置演示票源（到手价口径，价格含分钟级演示波动）；按 Ctrl+C 停止。")
+    print("比价数据为实测快照与真实商品（静态、来源逐行标注）；按 Ctrl+C 停止。")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
