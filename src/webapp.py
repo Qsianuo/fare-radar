@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """低价票雷达 FareRadar Web 版：python src/webapp.py [--port 8080] → http://127.0.0.1:<port>
 
-设计约束（ISSUE-007 分诊裁定 1，PRD v1.3 红线"规则唯一来源"）：本文件只做
-"HTTP 参数 → JSON → 渲染"的翻译，全部业务规则（准入式最低价、口径标注、
-未披露兜底、alerts 数据保护、任意航线定价与分钟级演示波动）直接调用
+设计约束（PRD 红线"规则唯一来源"）：本文件只做"HTTP 参数 → JSON → 渲染"的
+翻译，全部业务规则（航班 6 要素、费用明细与到手价、跨渠道去重、卡提示、
+准入式最低价、未披露兜底、alerts 数据保护、分钟级演示波动）直接调用
 fareradar.py 与 sources 的同一批函数与适配器，禁止复制规则——网页与 CLI
 必须说同一件事。仅绑定本机回环地址；数据仍为内置演示票源。
 """
@@ -31,7 +31,8 @@ except AttributeError:
     pass
 
 CORRUPTED_MSG = "收藏文件 alerts.json 已损坏，操作已取消（你的数据未被改动）；请先备份修复或删除该文件后重试。"
-TREND_NOTICE = "演示波动：近 24 小时价格为确定性生成的重放，非真实报价。"
+TREND_NOTICE = "演示波动：近 24 小时到手价（票面+机建+燃油）为确定性生成的重放，非真实报价。"
+RETIRED_NOTE = "城市已下线（v1.4 城市全集收缩），不再参与比价与提醒"
 
 
 def _route_from_params(params):
@@ -52,15 +53,36 @@ def _route_from_params(params):
 def _unknown_city_hint(origin, destination):
     unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
     if unknown:
-        return (f"城市码 {'、'.join(unknown)} 不在已支持的 25 城清单中，"
-                f"请从城市下拉中选择。")
+        parts = []
+        for code in unknown:
+            retired = cities.retired_name(code)
+            parts.append(f"{code}（{retired}，城市已下线）" if retired else code)
+        return f"城市码 {'、'.join(parts)} 不在已支持的 50 城清单中，请从城市下拉中选择。"
     return None
 
 
 def _route_lowest(origin, destination, date):
-    """某航线当前（全票源）可比最低价：收藏页与检查共用，规则同 CLI。"""
+    """某航线当前（全票源）可比最低到手价行：收藏页与检查共用，规则同 CLI。"""
     offers, _failed, _unavailable = fr.collect(all_sources(), origin, destination, date)
     return fr.lowest_eligible(offers, date), _failed
+
+
+def _card_payload(card):
+    """卡提示/卡池的对外 JSON 形状（CLI 与网页同词表）。"""
+    return {
+        "card_id": card.get("card_id") or card.get("deal_id") or "未披露",
+        "name": card.get("name", "未披露"),
+        "price": card["price"],
+        "validity_text": card.get("validity_text")
+        or f"{fr.disclose(card.get('valid_from'))} ~ {fr.disclose(card.get('valid_until'))}",
+        "scope": card.get("scope", ""),
+        "stock": fr.disclose(card.get("stock"), "未披露"),
+        "refund_disclosed": bool(card.get("refund_change_rules")),
+        "refund": fr.card_refund_text(card),
+        "purchase": fr.disclose(card.get("purchase_entry")),
+        "note": card.get("note") or "无",
+        "updated": fr.disclose(card.get("updated_at"), "未披露"),
+    }
 
 
 def _api_cities(_params):
@@ -87,12 +109,15 @@ def _api_trend(params):
         if lowest is None:
             continue
         stamp = dt.datetime.fromtimestamp(bucket * 60).strftime("%m-%d %H:%M")
-        points.append({"hours_ago": hours_ago, "time": stamp, "price": lowest["price"]})
+        # v1.4：曲线切换到手价口径（票面+机建+燃油）
+        points.append({"hours_ago": hours_ago, "time": stamp,
+                       "price": fr.total_price(lowest)})
     prices = [p["price"] for p in points]
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
         "date": date.isoformat(),
+        "price_basis": "到手价（票面+机建+燃油）",
         "current": prices[-1] if prices else None,
         "day_low": min(prices) if prices else None,
         "day_high": max(prices) if prices else None,
@@ -116,19 +141,35 @@ def _api_search(params):
     lowest = fr.lowest_eligible(offers, date)
     catalog = {s["id"]: s["description"] for s in source_catalog()}
     rows = [{
-        "price": o["price"],
+        "price": o["price"],                       # 票面价
+        "total_estimate": fr.total_price(o),       # 到手价（排序唯一口径）
         "source_id": o["source_id"],
         "source_name": o["source_name"],
         "source_desc": catalog.get(o["source_id"], ""),
         "entry_url": o.get("entry_url", ""),
         "entry_note": o.get("entry_note", ""),
         "product": o["product"],
-        "tax_label": fr.tax_label(o),
-        "note": fr.search_note(o, date),
+        "depart_time": o.get("depart_time"),       # 航班 6 要素（券/引流票为 null）
+        "arrive_time": o.get("arrive_time"),
+        "duration_text": o.get("duration_text"),
+        "dep_airport": o.get("dep_airport"),
+        "arr_airport": o.get("arr_airport"),
+        "carrier_code": o.get("carrier_code"),
+        "carrier_name": o.get("carrier_name"),
+        "flight_no": o.get("flight_no"),
+        "fee_breakdown": o.get("fee_breakdown"),
+        "channel_count": o.get("channel_count", 1),
+        "channel_names": o.get("channel_names", [o["source_name"]]),
+        "is_special_fare": bool(o.get("is_special_fare")),
+        "note": fr.search_note(o, date),           # 含"另有 N 个渠道有售"
         "risk_flags": fr.risk_flags(o, date),
         "is_deal": bool(o.get("is_deal")),
         "is_lowest": o is lowest,
     } for o in offers]
+
+    hints = [dict(_card_payload(c),
+                  entry_url=c.get("entry_url", ""), entry_note=c.get("entry_note", ""))
+             for c in fr.card_hints(origin, destination, date, sources)]
 
     alert_hit, warning = None, None
     try:
@@ -136,8 +177,9 @@ def _api_search(params):
     except fr.AlertsCorrupted:
         alert, warning = None, "收藏文件 alerts.json 已损坏，本次未做底价比对（数据未被改动）。"
     if (alert and lowest and alert.get("threshold") is not None
-            and lowest["price"] <= alert["threshold"]):
-        alert_hit = f"当前最低 ¥{lowest['price']} ≤ 你的底价 ¥{alert['threshold']}，可以出手了！"
+            and fr.total_price(lowest) <= alert["threshold"]):
+        alert_hit = (f"当前最低到手价 ¥{fr.total_price(lowest)} ≤ 你的底价 "
+                     f"¥{alert['threshold']}，可以出手了！")
 
     empty_hint = None
     if not rows:
@@ -149,9 +191,11 @@ def _api_search(params):
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
         "date": date.isoformat(),
         "weekday": f"周{'一二三四五六日'[date.weekday()]}",
+        "price_basis": "到手价（票面+机建+燃油）",
         "notice": fr.SIM_NOTICE,
         "failed": failed,
-        "unavailable_sources": unavailable,  # 覆盖外/当日无座的渠道及原因（区别于 failed 异常）
+        "unavailable_sources": unavailable,  # 覆盖外/当日无座/卡类渠道（区别于 failed 异常）
+        "card_hints": hints,                 # 命中的次卡/省钱卡（不计入 offers）
         "offers": rows,
         "alert_hit": alert_hit,
         "warning": warning,
@@ -165,29 +209,66 @@ def _api_deals(params):
         destination = fr.normalize_code(params["to"], "to") if params.get("to") else None
     except fr.UsageError as exc:
         return 400, {"ok": False, "error": str(exc)}
-    deals = []
+    specials = [{
+        "deal_id": s["deal_id"],
+        "origin": s["origin"],
+        "destination": s["destination"],
+        "destination_display": s["destination_display"],
+        "route_text": f"上海→{s['destination_display']}",
+        "date": s["date"],
+        "price": s["price"],
+        "depart_time": s["depart_time"],
+        "arrive_time": s["arrive_time"],
+        "flight_no": s["flight_no"],
+        "carrier_code": s["carrier_code"],
+        "carrier_name": s["carrier_name"],
+        "dep_airport": s["dep_airport"],
+        "arr_airport": s["arr_airport"],
+        "label": "特价票·不含机建燃油费｜省 ¥41",
+        "note": "特价票·固定航班日期·不含机建燃油费",
+        "entry_url": s.get("entry_url", ""),
+        "entry_note": s.get("entry_note", ""),
+    } for s in fr.special_fare_catalog(origin, destination)]
+    cards = []
     for source in all_sources():
         for d in source.deals(origin, destination):
-            d["entry_url"] = source.entry_url      # 渠道入口（ISSUE-010），卡片可点击
-            d["entry_note"] = source.entry_note
-            deals.append(d)
-    cards = [{
-        "deal_id": d.get("deal_id", "未披露"),
-        "source_name": fr.disclose(d.get("source_name"), "未披露"),
-        "entry_url": d.get("entry_url", ""),
-        "entry_note": d.get("entry_note", ""),
-        "name": d.get("name", "未披露"),
-        "price": d["price"],
-        "tax_label": fr.tax_label(d),
-        "stock": fr.disclose(d.get("stock"), "未披露"),
-        "route_text": f"{fr.city(d['origin'])} → {fr.city(d['destination'])}",
-        "validity": f"{fr.disclose(d.get('valid_from'), '未披露')} ~ {fr.disclose(d.get('valid_until'), '未披露')}",
-        "refund": fr.disclose(d.get("refund_change_rules"), fr.REFUND_DISCLOSE),
-        "purchase": fr.disclose(d.get("purchase_entry")),
-        "note": d.get("note") or "无",
-        "updated": fr.disclose(d.get("updated_at"), "未披露"),
-    } for d in deals]
-    return 200, {"ok": True, "notice": fr.DEALS_NOTICE, "deals": cards}
+            entry = dict(_card_payload(d))
+            if d.get("origin") and d.get("destination"):
+                entry["route_text"] = f"{fr.city(d['origin'])} → {fr.city(d['destination'])}"
+            else:
+                entry["route_text"] = d.get("scope", "")
+            entry["entry_url"] = source.entry_url      # 渠道入口（ISSUE-010），卡片可点击
+            entry["entry_note"] = source.entry_note
+            cards.append(entry)
+    return 200, {"ok": True, "notice": fr.DEALS_NOTICE,
+                 "special_fares": specials, "cards": cards}
+
+
+def _watch_item(a, date):
+    """收藏行 → 对外 JSON：已下线城市显式标注且不触发查询（不静默删除）。"""
+    item = {
+        "origin": a.get("origin", ""),
+        "destination": a.get("destination", ""),
+        "threshold": a.get("threshold"),  # v1.3 起允许 null（未设底价的收藏）
+        "created_at": a.get("created_at", ""),
+        "check_date": date.isoformat(),
+        "price_basis": "到手价（票面+机建+燃油）",
+    }
+    retired = fr.retired_names(a)
+    if retired:
+        item["retired"] = True
+        item["status_note"] = f"{RETIRED_NOTE}：{'、'.join(retired)}"
+        item["current_lowest"] = None
+        item["below_threshold"] = False
+        return item
+    lowest, _failed = _route_lowest(a.get("origin", ""), a.get("destination", ""), date)
+    threshold = a.get("threshold")
+    item["retired"] = False
+    item["status_note"] = None
+    item["current_lowest"] = fr.total_price(lowest) if lowest else None
+    item["below_threshold"] = bool(lowest and threshold is not None
+                                   and fr.total_price(lowest) <= threshold)
+    return item
 
 
 def _api_watch_list(_params):
@@ -196,22 +277,7 @@ def _api_watch_list(_params):
     except fr.AlertsCorrupted:
         return 409, {"ok": False, "error": CORRUPTED_MSG}
     date = dt.date.today() + dt.timedelta(days=1)
-    items = []
-    for a in alerts:
-        if not isinstance(a, dict):
-            continue
-        lowest, _failed = _route_lowest(a.get("origin", ""), a.get("destination", ""), date)
-        threshold = a.get("threshold")
-        items.append({
-            "origin": a.get("origin", ""),
-            "destination": a.get("destination", ""),
-            "threshold": threshold,  # v1.3 起允许 null（未设底价的收藏）
-            "created_at": a.get("created_at", ""),
-            "check_date": date.isoformat(),
-            "current_lowest": lowest["price"] if lowest else None,
-            "below_threshold": bool(lowest and threshold is not None
-                                    and lowest["price"] <= threshold),
-        })
+    items = [_watch_item(a, date) for a in alerts if isinstance(a, dict)]
     return 200, {"ok": True, "date": date.isoformat(), "alerts": items}
 
 
@@ -276,22 +342,30 @@ def _api_watch_check(_params):
     lines = []
     for a in alerts:
         route = f"{fr.city(a['origin'])} → {fr.city(a['destination'])}"
+        retired = fr.retired_names(a)
+        if retired:
+            lines.append({"route": route, "status": "retired",
+                          "text": f"城市已下线（v1.4 城市全集收缩）：{'、'.join(retired)}；"
+                                  f"不参与比价与提醒，可删除或改藏其他航线。"})
+            continue
         lowest, failed = _route_lowest(a["origin"], a["destination"], date)
         threshold = a.get("threshold")
         if lowest is None:
             extra = f"（{'、'.join(failed)} 源不可用）" if failed else ""
             lines.append({"route": route, "status": "none",
                           "text": f"暂无报价数据{extra}" if failed else
-                                  "无可比最低价（售罄/不含税/有效期不覆盖的报价均不参与竞争）"})
+                                  "无可比最低价（售罄/有效期不覆盖的报价均不参与竞争）"})
         elif threshold is None:
             lines.append({"route": route, "status": "info",
-                          "text": f"当前最低 ¥{lowest['price']}（未设底价，仅收藏）。"})
-        elif lowest["price"] <= threshold:
+                          "text": f"当前最低到手价 ¥{fr.total_price(lowest)}（未设底价，仅收藏）。"})
+        elif fr.total_price(lowest) <= threshold:
             lines.append({"route": route, "status": "hit",
-                          "text": f"当前最低 ¥{lowest['price']} ≤ 底价 ¥{threshold}，可以出手了！"})
+                          "text": f"当前最低到手价 ¥{fr.total_price(lowest)} "
+                                  f"≤ 底价 ¥{threshold}，可以出手了！"})
         else:
             lines.append({"route": route, "status": "wait",
-                          "text": f"当前最低 ¥{lowest['price']}，未达底价 ¥{threshold}，继续等待。"})
+                          "text": f"当前最低到手价 ¥{fr.total_price(lowest)}，"
+                                  f"未达底价 ¥{threshold}，继续等待。"})
     return 200, {"ok": True, "date": date.isoformat(), "notice": fr.SIM_NOTICE, "lines": lines}
 
 
@@ -357,7 +431,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"低价票雷达 Web 版已启动：http://{args.host}:{args.port}")
-    print("数据为内置演示票源（价格含分钟级演示波动）；按 Ctrl+C 停止。")
+    print("数据为内置演示票源（到手价口径，价格含分钟级演示波动）；按 Ctrl+C 停止。")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

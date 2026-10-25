@@ -92,3 +92,28 @@ CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源�
    "CLI 具体形态由技术方案定"，语义（出发地/目的地/日期）不变，不违反 PRD。
 3. `watch` 裸命令行为：PRD 未定义"仅运行 watch"的含义 → 技术方案补充为
    "检查全部关注航线的当前（明日）最低价并输出命中情况"，属增强不越界。
+
+## 8. v1.4 增量（ISSUE-011，依据 docs/02-PRD-v1.4.md 第 4~9 节）
+
+- **城市注册表 v2**（`cities.py`）：50 纯国内城市，条目扩为 (码, 名, 机场全称, 纬度, 经度)；
+  `airport_name()/all_cities()` 供航班字段与 /api/cities；HKG/KIX/NRT/ICN/BKK 进 `RETIRED_CITIES`
+  仅作存量 alerts 兼容展示（显式"城市已下线"，不参与比价与提醒，数据结构不变）。
+- **航班生成器**（`airlines.py`，新增）：6 航司名册+枢纽集；`route_flights()` 每航线每日 3 班
+  （早/午/晚窗口各 1 班、时段与槽位一一对应）、时刻 md5 派生 5 分钟粒度、时长=大圆距离÷780km/h+35min
+  向上取整 5 分钟、到达=起飞+时长且钳制不跨日；航班号=二字码+4 位（同航线内确定性去重）。
+- **税费引擎**（`fees.py`，新增）：机建 50；燃油按距离 ≤800km 20 / >800km 40（边界含 800）；
+  `fee_breakdown/total_estimate` 由 `collect()` 统一附加——CLI 与网页同函数（规则唯一来源）。
+- **到手价口径**：`total_price()` 取代 `offer["price"]` 成为 rank_offers/lowest_eligible/watch 判定
+  唯一口径（修订 ISSUE-001）；`eligible_for_lowest` 移除"不含税退出竞争"分支（税费另计标记退役）。
+- **去重**（`dedup_offers`）：键=出发日期+航班号、仅跨渠道合并、保留到手最低价、标 channel_count/
+  channel_names；无航班号行（券/卡）与 `no_dedup` 行（特价票）不参与。OTA 代理票经
+  `route_flights` 取同航班号形成真实跨渠道重复。
+- **两类产品**：`douyin_miniapp` = 21 条固定特价票（逐字 fixture + 仅固定日期可售 + 时段按价格表
+  顺序早/中/晚循环 + `special_fares()` 目录）∪ 基地航线会员价常规航班（无座机制保留）；
+  `douyin_groupbuy` = 6 张卡卡池（`cards_for()` 命中规则/`deals()` 全量；search 恒空、availability
+  恒报"卡类渠道"，覆盖模型不变式保持可解释）；`base.Source` 扩 `cards_for()/special_fares()` 默认空实现。
+- **API 契约**：/api/cities 50 城+airport；/api/search 行级航班 6 要素+fee_breakdown+total_estimate+
+  channel_count+顶层 card_hints；/api/deals = special_fares+cards 两类；/api/trend 切到手价；
+  watch 三接口到手价判定+retired 标注。详见 docs/handoffs/handoff-dev-api-v14.md。
+- **与 PRD 文本的既定取舍**：直播间闪购按券无航班字段；特价票有航班号但 no_dedup；卡面价固定无
+  分钟波动——三项均记录于 handoff-dev-api-v14.md 第 8 节与 ISSUE-011 Fix 节。

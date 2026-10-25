@@ -10,9 +10,9 @@ from . import cities, pricing
 from .base import Source
 
 _TIER = 0.78  # 闪购深折扣：非售罄时常为全场最低
-_FLASH_POOL = (
-    ("SHA", "CTU"), ("SHA", "PEK"), ("PEK", "SHA"), ("SHA", "KIX"),
-    ("CAN", "SZX"), ("KMG", "HKG"), ("HRB", "SYX"), ("CTU", "BKK"),
+_FLASH_POOL = (  # v1.4 城市全集收缩：闪购场次全部改为国内航线（不再出国际航线报价）
+    ("SHA", "CTU"), ("SHA", "PEK"), ("PEK", "SHA"), ("CAN", "SZX"),
+    ("KMG", "HRB"), ("HRB", "SYX"), ("CTU", "CAN"), ("SZX", "KMG"),
 )
 _FLASH_ROUTES_PER_DAY = 4
 _STOCK_BANDS = ((25, "售罄"), (60, "紧张"))  # 哈希余数 <25 售罄、<60 紧张、其余充足

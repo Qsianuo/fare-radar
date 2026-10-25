@@ -1,11 +1,12 @@
 """票源适配器注册表——可插拔的唯一改动点。
 
-v1.3 票源家族（PRD 第 5 节）：航司直连 / OTA 比价 / 抖音团购 /
-抖音小程序·春秋航空 / 抖音直播间，全部走本注册表，CLI 与网页共用。
+v1.4 票源家族（PRD 第 5~7 节）：航司直连 / OTA 比价 / 抖音团购（卡类）/
+抖音小程序·春秋航空（固定特价票+常规航班）/ 抖音直播间，全部走本注册表，
+CLI 与网页共用。
 新增票源的步骤：新建模块实现 base.Source 子类 → 在 all_sources() 登记。
 """
 
-from . import cities, pricing
+from . import airlines, cities, fees, pricing
 from .airline import AirlineSource
 from .base import Source
 from .douyin_groupbuy import DouyinGroupbuySource
@@ -13,7 +14,8 @@ from .douyin_live import DouyinLiveSource
 from .douyin_miniapp import DouyinMiniappSource
 from .ota import OtaSource
 
-__all__ = ["Source", "cities", "pricing", "all_sources", "source_by_id", "source_catalog"]
+__all__ = ["Source", "airlines", "cities", "fees", "pricing",
+           "all_sources", "source_by_id", "source_catalog"]
 
 
 def all_sources():
