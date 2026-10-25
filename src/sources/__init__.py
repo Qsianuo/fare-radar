@@ -17,6 +17,7 @@ from .douyin_miniapp import DouyinMiniappSource
 from .ota import OtaSource
 from .rapidapi_sky import RapidapiFlightSource
 from .snapshot_pack import SnapshotPackSource
+from .travelpayouts import TravelpayoutsCalendarSource
 from .variflight import VariflightSource
 
 __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
@@ -31,7 +32,8 @@ def all_sources():
     VariflightSource（v1.11 骨架，国内航班与票价；schema 待校准，未校准前不出数据）。
     未配置 Key 时 status=not_available，不出数据行、如实声明。
     """
-    return [SnapshotPackSource(), RapidapiFlightSource(), VariflightSource(), AmadeusSource(),
+    return [SnapshotPackSource(), RapidapiFlightSource(), VariflightSource(),
+            TravelpayoutsCalendarSource(), AmadeusSource(),
             AirlineSource(), OtaSource(),
             DouyinGroupbuySource(), DouyinMiniappSource(), DouyinLiveSource()]
 

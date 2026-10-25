@@ -24,7 +24,9 @@ import fareradar as fr  # noqa: E402
 # 注：unittest discover 以顶层模块导入，tests/__init__.py 不执行，故逐模块注入。
 import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
 import sources.variflight as _vf  # noqa: E402
+import sources.travelpayouts as _tp  # noqa: E402
 _am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
+_tp.CONFIG_NAME = "_test_offline_absent.json"
 import webapp  # noqa: E402
 from sources import all_sources, cities, pricing  # noqa: E402
 

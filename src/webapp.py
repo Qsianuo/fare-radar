@@ -11,6 +11,7 @@
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -115,6 +116,41 @@ def _api_nearby(params):
     }
 
 
+def _api_calendar(params):
+    """整月最低**参考价**日历（v1.12，ISSUE-021）：只回答「哪天最便宜」，不参与比价。
+
+    只需要 from/to + 可选 month（YYYY-MM，缺省取当月），不要求 date。
+    """
+    try:
+        for key in ("from", "to"):
+            if not params.get(key):
+                raise fr.UsageError(f"缺少参数 --{key}")
+        origin = fr.normalize_code(params["from"], "from")
+        destination = fr.normalize_code(params["to"], "to")
+        if origin == destination:
+            raise fr.UsageError("出发地与到达地不能相同")
+    except fr.UsageError as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    month = str(params.get("month") or str(params.get("date") or "")[:7]
+                or dt.date.today().strftime("%Y-%m")).strip()
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+        return 400, {"ok": False, "error": "month 需为 YYYY-MM 格式"}
+    sources = fr._selected_sources(params.get("source") or None)
+    days, source_name = fr.month_lowest(sources, origin, destination, month)
+    return 200, {
+        "ok": True,
+        "route": f"{fr.city(origin)} → {fr.city(destination)}",
+        "month": month,
+        "source": source_name,
+        "cheapest": days,
+        "price_basis": "参考价（上游搜索缓存，非可售报价，不含费用明细）",
+        "notice": (f"该月共 {len(days)} 天有参考价，以下为最便宜的几天（来源：{source_name}；"
+                   "只含日期/价格/航司，无起降时刻与舱位，仅作「哪天飞最便宜」的参考）"
+                   if days else
+                   "该航线本月暂无参考价（上游只收录被搜索过的航线，无数据不代表没有航班）"),
+    }
+
+
 def _api_search(params):
     route, err = _route_from_params(params)
     if err:
@@ -198,7 +234,9 @@ def _api_search(params):
         "price_basis": "到手价（票面+机建+燃油）",
         "notice": fr.DATA_NOTICE,
         "failed": failed,
-        "unavailable_sources": unavailable,  # 覆盖外/卡类/未接入渠道（区别于 failed 异常）
+        "unavailable_sources": [u for u in unavailable          # 覆盖外/卡类/未接入渠道
+                                if u.get("offer_channel", True)],  # 价格日历类不参与比价，不列为"无销售"
+
         "sources_status": [{"id": s["id"], "name": s["name"], "status": s["status"],
                             "reason": s["reason"]} for s in source_catalog()],
         "card_hints": hints,                 # 命中的次卡/省钱卡（不计入 offers）
@@ -381,6 +419,7 @@ GET_APIS = {
     "/api/cities": _api_cities,
     "/api/sources": _api_sources,
     "/api/nearby": _api_nearby,
+    "/api/calendar": _api_calendar,
     "/api/search": _api_search,
     "/api/deals": _api_deals,
     "/api/watch/list": _api_watch_list,

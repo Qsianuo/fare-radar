@@ -395,6 +395,11 @@ footer p{margin:4px 0 0}
       </div>
       <div class="nearby-box" id="nearby-bar"></div>
       <p class="chart-notice" id="nearby-notice"></p>
+      <div class="chart-head">
+        <span class="chart-title">整月最便宜（参考价，非可售）</span>
+      </div>
+      <div class="nearby-box" id="calendar-bar"></div>
+      <p class="chart-notice" id="calendar-notice"></p>
       <div class="insight" id="insight-box" hidden>
         <div class="insight-head">
           <span class="insight-tag" id="insight-tag"></span>
@@ -625,6 +630,30 @@ async function loadNearby() {
     const box = $("nearby-bar");
     box.innerHTML = "";
     box.append(el("p", "chart-empty chart-error", "临近日期数据加载失败：" + err.message));
+  }
+}
+
+/* ---------------- 整月最便宜（参考价，非可售；无数据整块留空） ---------------- */
+async function loadCalendar() {
+  const p = state.lastSearch || { from: "INC", to: "CAN", date: defaultDate() };
+  const month = String(p.date || defaultDate()).slice(0, 7);
+  const box = $("calendar-bar");
+  try {
+    const d = await api("/api/calendar", Object.assign({}, p, { month }));
+    box.innerHTML = "";
+    $("calendar-notice").textContent = d.notice || "";
+    const days = d.cheapest || [];
+    days.forEach((x) => {
+      const item = el("div", "nearby-item");
+      item.append(el("div", "nearby-price", "¥" + x.price));
+      item.append(el("div", "nearby-date",
+        x.date.slice(5) + (x.flight_no ? " · " + x.flight_no : "")));
+      box.append(item);
+    });
+    if (!days.length) box.append(el("p", "chart-empty", "该航线本月暂无参考价"));
+  } catch (err) {
+    box.innerHTML = "";
+    $("calendar-notice").textContent = "参考价日历加载失败：" + err.message;
   }
 }
 
@@ -885,6 +914,7 @@ async function runSearch() {
   setGauge(data);
   renderInsights(data);
   loadNearby();
+  loadCalendar();
 }
 $("search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(); });
 

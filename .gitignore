@@ -7,3 +7,5 @@ src/sources/.rapidapi_cache/
 src/sources/variflight_config.json
 src/sources/.variflight_cache/
 server.log
+src/sources/travelpayouts_config.json
+src/sources/.travelpayouts_cache/
