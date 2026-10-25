@@ -47,7 +47,25 @@
 
 ## Reproduce（Dev 填）
 
+- 复现环境: feature/v1.3.1（修复前基线）| 日期: 2026-10-25 | 测试: `python src/fareradar.py` 与 `python src/webapp.py` 的 /api/*
+- 【1 时间与地点字段】`search --from SHA --to PEK --date 2026-11-15`：结果行只有"价格/票源/航班/含税/备注"五列，无起飞/到达时间、无起降机场、无承运人标注；同一航线全天只有 2 个航司直连班次，无时段覆盖可言（早 06:00-11:59 无班次的日子大量存在）。
+- 【2 多航司聚合】`search` 任意航线：航司直连仅 MU/9C 两家（硬编码 _FLEET），无承运人中文名、无枢纽概念；OTA 行 product 为产品名而非航班号，跨渠道同一物理航班重复出现两行、无去重与"另有 N 渠道有售"标注。
+- 【3 固定特价票】`search --from SHA --to JJN --date 2026-10-27`：无任何特价票输出（引擎泛化定价与真实"固定航线+固定日期+固定价"产品完全不符）；`deals` 输出的是 DY-001~005 泛化券（有效期+固定航线），与真实团购"卡类产品"形态不符。
+- 【4 税费校验】含税/不含税两行只有"含税"列一个词，无机建/燃油明细、无到手价；不含税行按旧口径"退出最低价竞争"，导致到手价其实最低的引流票反而拿不到标记（ISSUE-001 口径在费用确定化后已过时）。
+- 【5 渠道入口】miniapp `entry_url` 为 iesdouyin 分享链（token 会过期）、groupbuy 为旧短链 `v.douyin.com/dIviP77Fqow/`，与评审人最新地点页短链不一致。
+- 【6 国内城市全集】`/api/cities` 返回 25 城含 HKG/KIX/NRT/ICN/BKK 5 个国际城市；`search --from SHA --to KIX` 照常出价（DY-003 上海-大阪券亦在列）；存量 alerts.json 若引用已下线城市无任何提示。
+
 ## Fix（Dev 填）
+
+- 修复版本: v1.4.0 | 分支: feature/v1.4 | 日期: 2026-10-25 | 测试: 117 例全绿（`python -m unittest discover tests`）；API 契约详见 docs/handoffs/handoff-dev-api-v14.md
+- 【1→ cities.py v2 + airlines.py】50 城纯国内注册表（三字码/中文名/机场全称/经纬度，PRD 第 4 节逐字）；`airlines.route_flights()` 每航线每日早/午/晚各 1 班（5 分钟粒度、到达=起飞+大圆距离推算时长、不跨日到达、全程 md5 确定性无随机）；每条报价行（航司直连/OTA 代理/小程序/特价票）带 depart_time/arrive_time/duration_text/dep_airport/arr_airport/carrier_code/carrier_name/flight_no 六要素。
+- 【2→ airlines.py + fareradar.dedup_offers】6 航司名册+枢纽规则（枢纽航线在枢纽航司内哈希分配，通达航线全名册分布）；去重键=出发日期+航班号、仅跨渠道合并，保留到手最低价并标 channel_count/channel_names/"另有 N 个渠道有售"；OTA 代理票确定性携带正班航班号形成真实重复；同渠道多班次与券/特价票/卡不参与。
+- 【3→ douyin_miniapp 重构】21 条固定特价票逐字入库（PRD 7.1 表：航线/日期/价格不改一字，"黔江(重庆)"照抄卡面、城市名保持"黔江"），仅出发日期精确匹配返回，固定时刻按价格表顺序早/中/晚循环分布，note 含"特价票·固定航班日期·不含机建燃油费"与"省 ¥41"；特价票以外基地航线仍出会员价常规航班（note 区分）。团购渠道重构为 6 张次卡/省钱卡卡池（PRD 7.2 卡面逐字，含"潮汕"照抄），从比价行退出改为 card_hints 独立数据块；DY-004 售罄场景延续为 DY-103 售罄卡、DY-005 缺退改场景延续为 4 张"退改规则未披露"卡（迁移≠消灭），DY-003 随国际城市下线移除。
+- 【4→ fees.py + 口径切换】机建 50 元/人、燃油 ≤800km 20 / >800km 40（大圆距离分档，边界含 800）；每行 fee_breakdown{airport_fee,fuel_fee,tax_included,included_desc} 与 total_estimate=票面+未含费用；"到手价=票面+机建+燃油"成为排序/最低价/提醒唯一口径——**正式修订 ISSUE-001"仅含税可比"裁定**（费用确定化后全部行可比），`tax_included=False` 行不再退出竞争；"税费另计"风险标记退役由明细取代。旧测试 `TaxComparabilityTest`/`test_lowest_eligible_ignores_non_tax_rows` 等按新口径改写为 `TotalPriceComparabilityTest`（改写清单见本节末）。展示文案二态对齐真实截图："已含机建+燃油"/"另加机建 ¥50 + 燃油 ¥XX"/特价票"不含机建燃油费"。
+- 【5→ 渠道链接】miniapp 与 groupbuy 的 entry_url 统一更新为 `https://v.douyin.com/USSyX47SP7s/`（逐字），entry_note 区分"特价票与固定航线机票"/"次卡与省钱卡"；外链评估结论已沉淀 docs/04 附录；相关测试断言逐字同步（SourceCoverageTest/FiveSourceFamilyTest/WebApiTest）。
+- 【6→ 城市全集收缩】HKG/KIX/NRT/ICN/BKK 移出注册表（不再生成任何报价，live 闪购场次国内化、DY-003 移除）；RETIRED_CITIES 仅保留码→名映射供兼容展示；存量 alerts.json 引用已下线城市的收藏在 CLI `watch --list`/`watch` 与 /api/watch/list/check 显式标注"城市已下线（v1.4 城市全集收缩）"，不参与比价与提醒、不静默删除、数据结构不变（RetiredCityTest 锁定）。
+- 口径裁定取舍（与 PRD 文本的差异，已在 handoff-dev-api-v14.md 第 8 节记录）：①直播间闪购按券处理不带航班字段（任务书"券无航班号"优先于 PRD 第 5 节对闪购的 6 要素列举）；②特价票展示航班号但不参与去重（PRD 第 5 节 6 要素与任务书第 5 点同时满足）；③卡面价固定不叠加分钟波动（真实"固定价"口径）。
+- 旧测试改写清单（ISSUE-001 修订连带）：`test_lowest_eligible_ignores_non_tax_rows`→`test_non_tax_rows_compete_via_total`、`test_no_eligible_lowest_when_all_non_tax`→`test_non_tax_row_wins_when_total_lower`、`test_search_discloses_tax_and_marks_comparable_lowest`→`test_search_marks_lowest_by_total`、`test_kix_case_marker_on_comparable_row`→随 KIX 下线移除（不含税行竞争语义由 `test_tax_retired_flag_absent`+`test_search_marks_lowest_by_total` 承接）；`test_covered_deal_still_lowest`/`test_not_covered_deal_excluded_and_no_alert`/`test_search_row_marks_refund_unclear`/`test_complete_deal_card_contract` 随泛化券废弃改写为卡池与直播间口径；`test_sold_out_only_route_has_no_lowest` 改写为卡类渠道语义。诚实披露红线资产（售罄/未披露退改/演示声明/损坏保护/退出码）全部保留并有新测试锁定。
 
 ## Code Review（总协调者填）
 
