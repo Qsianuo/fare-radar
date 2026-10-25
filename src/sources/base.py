@@ -33,6 +33,10 @@ def offline_mode():
 
 
 class Source:
+    """票源基类。`offer_channel=False` 的渠道不产出比价行（如价格日历），
+    引擎不会把它计入"本次无销售"列表，避免把"不参与比价"误报成"卖不了"。"""
+    offer_channel = True
+
     """票源适配器接口：search 返回比价行；cards_for/deals 返回卡类产品。"""
 
     source_id = ""

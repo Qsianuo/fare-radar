@@ -152,7 +152,8 @@ def collect(sources, origin, destination, date):
             if not available:
                 unavailable.append({"source_id": source.source_id,
                                     "name": source.display_name, "reason": reason,
-                                    "status": getattr(source, "status", "active")})
+                                    "status": getattr(source, "status", "active"),
+                                    "offer_channel": getattr(source, "offer_channel", True)})
                 continue
             for offer in source.search(origin, destination, date):
                 offer["entry_url"] = source.entry_url
@@ -318,6 +319,27 @@ def empty_notes(sources, origin, destination, date):
     return notes
 
 
+def month_lowest(sources, origin, destination, month, cheapest=5):
+    """整月最低**参考价**（v1.12，不参与比价、不进到手价排序）。
+
+    返回 (days, source_name)：days 为按价格升序的前 cheapest 天，
+    每项 {date, price, airline, flight_no}；无数据返回 ([], None)。
+    三入口共用，规则唯一来源。
+    """
+    for source in sources:
+        reader = getattr(source, "calendar", None)
+        if not callable(reader):
+            continue
+        try:
+            days = reader(origin, destination, month) or []
+        except Exception:            # 单渠道异常不影响比价主流程
+            days = []
+        if days:
+            ordered = sorted(days, key=lambda item: (item["price"], item["date"]))
+            return ordered[:cheapest], getattr(source, "display_name", source.source_id)
+    return [], None
+
+
 LEVEL_TEXT = {"low": "偏低", "typical": "正常价", "high": "偏高"}
 
 
@@ -477,7 +499,8 @@ def cmd_search(args):
     if not_integrated:
         names = "、".join(u["name"] for u in not_integrated)
         print(f"未接入渠道（暂无合规公开接口）：{names}")
-    on_sale_off = [u for u in unavailable if u.get("status") != "not_available"]
+    on_sale_off = [u for u in unavailable
+                   if u.get("status") != "not_available" and u.get("offer_channel", True)]
     if on_sale_off:
         detail = "、".join(f"{u['name']}（{u['reason']}）" for u in on_sale_off)
         print(f"以下渠道本次无销售：{detail}")
@@ -492,6 +515,11 @@ def cmd_search(args):
     if insight:
         print(insight_text(insight))
         print(f"  {insight.get('basis', '')}；{insight.get('history_note', '')}")
+    cheapest_days, cal_source = month_lowest(sources, origin, destination,
+                                             date.isoformat()[:7])
+    if cheapest_days:
+        bar = "｜".join(f"{item['date'][5:]} ¥{item['price']}" for item in cheapest_days)
+        print(f"整月最便宜（参考价·非可售，来源：{cal_source}）：{bar}")
     if not offers:
         unknown = [c for c in (origin, destination) if cities.city_name(c) is None]
         notes = empty_notes(sources, origin, destination, date)

@@ -18,7 +18,9 @@ sys.path.insert(0, str(ROOT / "src"))
 # 测试一律离线：网络票源视为未配置（同其他测试模块的注入方式）
 import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
 import sources.variflight as _vf  # noqa: E402
+import sources.travelpayouts as _tp  # noqa: E402
 _am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
+_tp.CONFIG_NAME = "_test_offline_absent.json"
 
 import mcp_server  # noqa: E402
 

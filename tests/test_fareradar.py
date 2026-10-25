@@ -26,7 +26,9 @@ import fareradar as fr  # noqa: E402
 # 注：unittest discover 以顶层模块导入，tests/__init__.py 不执行，故逐模块注入。
 import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
 import sources.variflight as _vf  # noqa: E402
+import sources.travelpayouts as _tp  # noqa: E402
 _am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
+_tp.CONFIG_NAME = "_test_offline_absent.json"
 import webapp  # noqa: E402
 from sources import all_sources, cities, fees, pricing, source_catalog  # noqa: E402
 from sources.douyin_groupbuy import DouyinGroupbuySource  # noqa: E402
@@ -516,13 +518,14 @@ class SourceFamilyTest(unittest.TestCase):
 
     FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI·Google Flights"),
               ("variflight", "飞常准·Aviation MCP"),
+              ("travelpayouts", "Aviasales·价格日历"),
               ("amadeus", "Amadeus 真实接口"),
               ("airline", "航司直连"), ("ota", "OTA 比价"),
               ("douyin_groupbuy", "抖音团购"), ("douyin_miniapp", "抖音小程序·春秋航空"),
               ("douyin_live", "抖音直播间")]
     NOT_AVAILABLE = ("airline", "ota", "douyin_live")
     # 有 Key=active，无 Key=not_available（v1.11 起 variflight 亦属配置门控）
-    CONFIG_GATED = ("amadeus", "rapidapi_sky", "variflight")
+    CONFIG_GATED = ("amadeus", "rapidapi_sky", "variflight", "travelpayouts")
 
     def test_catalog_matches_v15(self):
         catalog = source_catalog()
@@ -534,7 +537,8 @@ class SourceFamilyTest(unittest.TestCase):
                 self.assertIn(entry["status"], ("active", "not_available"),
                               "配置门控渠道：状态取决于本地是否配置 Key")
                 if entry["status"] == "not_available":
-                    self.assertIn("未配置 API Key", entry["reason"])
+                    # 各渠道凭证名不同（API Key / token），措辞可异但必须点明"未配置"
+                    self.assertRegex(entry["reason"], "未配置 (API Key|token)")
             elif entry["id"] in self.NOT_AVAILABLE:
                 self.assertEqual(entry["status"], "not_available")
                 self.assertEqual(entry["reason"], "暂无合规公开接口，未接入")
