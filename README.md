@@ -129,3 +129,22 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 3. 重启 `python src/webapp.py`，渠道"Amadeus 真实接口"即变为可用，查询结果带"真实接口"标注。
 
 内置调用纪律（自动生效）：Token 缓存复用、同航线同日期结果缓存 30 分钟、**当日最多 200 次调用**（达到自动停用当日渠道）、超时 10 秒、遇 429 立即停不重试。注意：Amadeus 对**中国国内航线覆盖有限**，返回为空时如实显示无报价；测试环境数据可能为缓存，购买以官方渠道为准。
+
+## 作为 MCP Server 使用（v1.8.0，AI 客户端可直连）
+
+本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` 四个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
+
+ZCode 配置（设置 → MCP，添加自定义服务器）：
+
+```json
+{
+  "mcpServers": {
+    "fareradar": {
+      "command": "python",
+      "args": ["C:\Users\86157\.zcode\workspace\draft-a5204506-6780-4741-bcc2-e9b1d597c39b\fare-radar\src\mcp_server.py"]
+    }
+  }
+}
+```
+
+Claude Desktop（`claude_desktop_config.json` 同款结构）。添加后重启客户端，即可对 AI 说"用 fareradar 查明天银川到广州的最低价"。协议自验：`echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python src/mcp_server.py`。
