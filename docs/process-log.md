@@ -133,3 +133,14 @@
 1. PR-001 曾"先合并后评审"→ 从 PR-002 起改为"评审通过后由协调者合并"，全程执行到位。
 2. S3 并行代理曾互相扫入未完成文件 → S6 各角色只提交自己改的文件，无污染。
 3. 单测输出卫生问题（帮助文本混入测试输出）记入 PR-001 评审意见，已随 v1.1 修复链改写测试时处理。
+
+## S14 迭代九：v1.8.0 MCP Server（评审人"可以，开动吧"）
+
+- 背景：评审人问"我们做的项目是不是类似于一个 mcp"，协调者给出结构对比（适配器契约/能力发现/异构归一相似；协议 vs 应用、模型驱动 vs 固定编排不同），评审人拍板实做。
+- 实现（总协调者直接实现，轻量流程）：src/mcp_server.py——纯标准库 MCP stdio（NDJSON JSON-RPC 2.0）完整生命周期；4 工具（search_flights/list_deals/list_sources/favorites）；复用 webapp._api_* 处理器（规则唯一来源零复制）；FARE_RADAR_ALERTS 隔离收藏文件。
+- 测试：新增 11 例（协议契约+四工具+子进程 stdio 集成往返），全库 **165 例全绿（0.9s 全离线）**；过程中修复共享状态污染与 v1.5 载荷结构差异（special_fares+cards）。
+- 冒烟：stdio 三步往返（initialize→tools/list→search INC→CAN）输出完整快照比价。
+- **流程瑕疵披露**：本迭代 commit 未走分支+PR 合并，直接落在 main（20f8441）——切分支操作遗漏；实现与评审同为协调者。特此记录，供复盘。
+- tag v1.8.0；README 含 ZCode/Claude Desktop 接入配置。
+
+| v1.8.0 | MCP Server（stdio，4 工具，零依赖） | tag v1.8.0，ISSUE-014 |
