@@ -52,6 +52,42 @@
 
 ## Test（Tester 填）
 
+- 测试人: Tester | 日期: 2026-10-25 | 对象: main@3233b15（tag v1.5.0，PR-012 合并后） | 方式: 聚焦回归——`python -m unittest discover tests` + 起服务 `python src/webapp.py --port 8082` 以 curl/urllib 黑盒 + CLI 双入口抽查。**结论：6 项全部通过，无新缺陷。**
+
+### 1. 评审人场景：INC→CAN 2026-11-01 — 通过
+
+- `/api/search?from=INC&to=CAN&date=2026-11-01` 返回 **8 行（5 直飞+3 中转）**，程序化逐字比对 ISSUE-012 实测证据：航班号/起降时刻/跨日(+1)/到达航站楼（MF8753→T2、GJ8258→T2、ZH8942→T3、AQ1275 无航站楼后缀）/机型/餐食/裸价/含税价/共享航班备注/少量标记 **8/8 全一致**；厦航 MF8753 07:40→10:50 票面 ¥500 含税 ¥640 ✔。
+- 航班号段白名单：11/11（MF8753、GJ8258、ZH8942、AQ1275、CZ3270、CA4270、CA4349、G54338、3U8119、9C6202、9C8680）全部可溯源至实测证据，命中率 100%。
+- 展示格式：API 返回 carrier_name/flight_no 一等字段，CLI 渲染"厦航 MF8753""国航 CA4270|CA4349"式，零"CZ · CZ9782"拼接；临近日期条逐字 `10-30 ¥450｜10-31 ¥450｜11-01 ¥500｜11-02 ¥490`。
+
+### 2. 零编造断言 — 通过
+
+- 未收录航线 SHA→PEK（2026-11-15）：0 行 + `empty_hint`＝"该航线暂无真实数据快照；当前收录范围：银川(INC) → 广州(CAN) 2026-11-01｜来源：航旅纵横（评审人 2026-10-25 实测截图）。"；INC→CAN 改查 2026-11-02 同样 0 行并显式提示（快照仅 2026-11-01 可售）。
+- grep 断言 src/：编造航班号 CZ9782/CZ8645/CZ7836 **零次以数据出现**，仅 3 处"禁止再现"禁令注释（src/webapp.html:687、src/fareradar.py:10/70-73）；生成器 airlines.py 仅存休眠（airline.py 历史说明注释引用），fareradar.py/webapp.py 及全部 active 票源均不导入不调用。
+- 静态确定性：同参数两次请求响应 md5 逐字节一致（无演示波动）；/api/trend 已退役（404），/api/nearby 缺 date 返回 400。
+
+### 3. 成功标准：与基准（航旅纵横）同口径价差 — 通过
+
+- 8 行裸价/含税价与基准逐字相等，**逐行价差 = 0 ≤ ¥50**；直飞含税最低 ¥640、中转最低 ¥550，与基准一致。
+
+### 4. 不回退 — 通过
+
+- 特价票：/api/deals 21 条，flight_no/depart_time 全 null（"未披露（以下单页为准）"）；SHA→CAN 仅固定日期 2026-10-27 可售（1 行 ¥219），2026-11-01 查询 0 行且显式提示。
+- 次卡 card_hints 独立：INC→CAN 搜索 hints=4 不入 offers；未收录航线 SHA→PEK 2026-12-15 → 0 行 + 5 张卡提示。
+- 退改未披露资产：DY-101/104/105/106 refund_disclosed=false 且渲染"退改规则未披露（…务必核对…）"；DY-103 售罄保留。
+- 错误路径：缺参/坏日期/同城市/过去日期/未知票源/非常规三字码/nearby 缺 date 共 8 类均 400；损坏 alerts.json 下 watch/list、watch/set、watch/check 均 **409**（数据未被改动），search 降级带 warning 且 alert_hit=None。
+- alerts 兼容：set→list→check→remove 往返正常；search alert_hit 命中文案"当前最低到手价 ¥550 ≤ 你的底价 ¥600"。
+- 渲染：webapp.html 无旧拼接模式、无"演示波动"、无 /api/trend、无自动刷新；页脚 v1.5.0；临近日期最低价条与未接入灰化 chip（.chip-na）在位。
+
+### 5. 单测复跑 — 通过
+
+- `python -m unittest discover tests`：**Ran 144 tests — OK（144/144 全绿）**（损坏 alerts.json 警告为测试夹具预期输出）。
+
+### 6. 遗留观察（不计缺陷）
+
+- /api/watch/check 对未收录航线报"无可比最低价（售罄/有效期不覆盖…）"而非"暂无报价数据"——与 v1.4.0 逐字相同的既有行为（诚实不编造），不在四缺陷范围内，建议列入后续优化备忘。
+- 测试产生的 alerts.json 已删除，工作区干净；prs/ 目录无 PR-012.md（合并记录见 git 3233b15 提交信息）。
+
 ## User Acceptance（User 填）
 
 ## Closed（PM 填，关联 PR/版本）
