@@ -4,4 +4,6 @@ src/sources/amadeus_config.json
 src/sources/.amadeus_cache/
 src/sources/rapidapi_config.json
 src/sources/.rapidapi_cache/
+src/sources/variflight_config.json
+src/sources/.variflight_cache/
 server.log
