@@ -130,7 +130,23 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 
 内置调用纪律（自动生效）：Token 缓存复用、同航线同日期结果缓存 30 分钟、**当日最多 200 次调用**（达到自动停用当日渠道）、超时 10 秒、遇 429 立即停不重试。注意：Amadeus 对**中国国内航线覆盖有限**，返回为空时如实显示无报价；测试环境数据可能为缓存，购买以官方渠道为准。
 
-## 作为 MCP Server 使用（v1.14.0，AI 客户端可直连）
+## 接入聚合数据「航班机票查询」（可选，按次计费，默认关闭）
+
+补 **RapidAPI 在国内线的两个缺口**：航线覆盖差（`INC→CTU` 类返回 204）与"有航班无价"
+（实测 `INC→SZX 2026-10-27` 的奥凯 BK3037，Google Flights 无价，聚合数据给 ¥918）。
+
+1. 注册 https://www.juhe.cn/ → 申请「航班机票查询」→ 审核通过后在「我的 API」取 **AppKey**。
+2. 写入 `src/sources/juhe_config.json`：`{"api_key": "<AppKey>", "endpoint": "", "proxy": ""}`。
+3. 重启 `python src/webapp.py`，渠道「聚合数据·航班机票」即 `active`；未配置 Key 时 `not_available`，**不发起任何请求**。
+
+**计费提醒**：免费试用只有 **3 次**（不是"每日 100 次"），正价 ¥99/450 次 ≈ 0.22 元/次。
+内置硬停：**当日 20 次 / 当月 60 次**，触顶即降级并给中文原因，**绝不自动充值**；
+结果缓存 6 小时、空结果 30 分钟。接口参数与坑见 `docs/09-juhe-integration.md`。
+
+**价格口径**：`ticketPrice` 是否含机建燃油上游未明示，按票面价处理（`tax_included=false`），
+到手价由引擎补"机建 ¥50 + 燃油"并逐行标注——不把它当成含税价，避免低估。
+
+## 作为 MCP Server 使用（v1.15.0，AI 客户端可直连）
 
 本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` / `spring_flights` / `spring_coupon_quote` 六个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
 

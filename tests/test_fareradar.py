@@ -27,8 +27,9 @@ import fareradar as fr  # noqa: E402
 import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
 import sources.variflight as _vf  # noqa: E402
 import sources.travelpayouts as _tp  # noqa: E402
+import sources.juhe as _ju  # noqa: E402
 _am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
-_tp.CONFIG_NAME = "_test_offline_absent.json"
+_tp.CONFIG_NAME = _ju.CONFIG_NAME = "_test_offline_absent.json"
 import webapp  # noqa: E402
 from sources import all_sources, cities, fees, pricing, source_catalog  # noqa: E402
 from sources.douyin_groupbuy import DouyinGroupbuySource  # noqa: E402
@@ -518,6 +519,7 @@ class SourceFamilyTest(unittest.TestCase):
 
     FAMILY = [("snapshot_pack", "实测快照"), ("rapidapi_sky", "RapidAPI·Google Flights"),
               ("variflight", "飞常准·Aviation MCP"),
+              ("juhe_flight", "聚合数据·航班机票"),
               ("travelpayouts", "Aviasales·价格日历"),
               ("amadeus", "Amadeus 真实接口"),
               ("airline", "航司直连"), ("ota", "OTA 比价"),
@@ -525,7 +527,8 @@ class SourceFamilyTest(unittest.TestCase):
               ("douyin_live", "抖音直播间")]
     NOT_AVAILABLE = ("airline", "ota", "douyin_live")
     # 有 Key=active，无 Key=not_available（v1.11 起 variflight 亦属配置门控）
-    CONFIG_GATED = ("amadeus", "rapidapi_sky", "variflight", "travelpayouts")
+    CONFIG_GATED = ("amadeus", "rapidapi_sky", "variflight", "travelpayouts",
+                    "juhe_flight")
 
     def test_catalog_matches_v15(self):
         catalog = source_catalog()
