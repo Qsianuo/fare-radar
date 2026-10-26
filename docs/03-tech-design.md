@@ -143,5 +143,16 @@ CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源�
    此类行不参与排序首位、不参与「◀ 最低价」、不触发低价提醒（由 `fareradar.eligible_for_lowest`
    与 `_price_sort_key` 统一把关）。唯仍可丢弃的是**缺航段/缺时刻**的行程——那连"哪一班"都说不清。
 
+9. **新增联网票源必须同步 6 处离线注入**（v1.15，ISSUE-024，红线第 5 次复发的教训）：
+   `python -m unittest discover tests` 的 `top_level_dir` 默认就是 `tests`，测试模块按
+   `test_xxx` **顶层导入**，`tests/__init__.py` **不会被执行**——"只改 `tests/__init__.py`"
+   在 discover 下完全无效。因此新增联网适配器时，除 `tests/__init__.py` 外，必须在这 5 个
+   模块各补一行 `CONFIG_NAME = "_test_offline_absent.json"`：
+   `test_fareradar.py` / `test_v14_features.py` / `test_v15_snapshot.py` / `test_webapp.py` /
+   `test_mcp_server.py`（子进程场景还需 `FARE_RADAR_OFFLINE=1`），并在
+   `tests/test_offline_guard.py` 的 `NETWORK_MODULES` 与 `known` 清单里登记。
+   验收动作：跑测试**前后**比对 `src/sources/<源>/.xxx_cache/day_counter.json`，
+   数值必须完全一致。按次计费的源（聚合数据、飞常准）一次误联网就是真扣钱。
+
 实现参考：`sources/rapidapi_sky.py` 的 `_fetch`（status 校验）、`EMPTY_CACHE_TTL`、
 `empty_note`；引擎侧 `fareradar.empty_notes()` 为三入口共用的原因词表来源。

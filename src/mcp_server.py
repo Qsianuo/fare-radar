@@ -29,7 +29,7 @@ import fareradar as fr  # noqa: E402
 import webapp  # noqa: E402
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_INFO = {"name": "fareradar", "version": "1.14.0",
+SERVER_INFO = {"name": "fareradar", "version": "1.15.0",
                "title": "低价票雷达 FareRadar"}
 SUPPORTED_METHODS = ("initialize", "ping", "tools/list", "tools/call")
 

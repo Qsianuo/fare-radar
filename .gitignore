@@ -9,3 +9,5 @@ src/sources/.variflight_cache/
 server.log
 src/sources/travelpayouts_config.json
 src/sources/.travelpayouts_cache/
+src/sources/juhe_config.json
+src/sources/.juhe_cache/
