@@ -7,7 +7,7 @@ not_available，不出数据行）。全部走本注册表，CLI 与网页共用
 新增票源的步骤：新建模块实现 base.Source 子类 → 在 all_sources() 登记。
 """
 
-from . import airlines, cities, fees, pricing, snapshot_pack
+from . import airlines, cities, fees, pricing, snapshot_pack, spring_store
 from .airline import AirlineSource
 from .amadeus import AmadeusSource
 from .base import Source
@@ -21,7 +21,7 @@ from .travelpayouts import TravelpayoutsCalendarSource
 from .variflight import VariflightSource
 
 __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
-           "all_sources", "source_by_id", "source_catalog"]
+           "spring_store", "all_sources", "source_by_id", "source_catalog"]
 
 
 def all_sources():

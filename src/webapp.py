@@ -23,7 +23,7 @@ HTML_FILE = SRC / "webapp.html"
 
 sys.path.insert(0, str(SRC))
 import fareradar as fr  # noqa: E402
-from sources import all_sources, cities, snapshot_pack, source_catalog  # noqa: E402
+from sources import all_sources, cities, snapshot_pack, source_catalog, spring_store  # noqa: E402
 
 try:  # 与 CLI 一致：Windows 控制台强制 UTF-8
     for _stream in (sys.stdout, sys.stderr):
@@ -415,6 +415,54 @@ def _api_watch_check(_params):
     return 200, {"ok": True, "date": date.isoformat(), "notice": fr.DATA_NOTICE, "lines": lines}
 
 
+def _spring_params(params):
+    """春秋券库的两级查询共用入参校验：from/to 必填（码或中文名），date 可选。
+
+    注意：此处不强校验三字码——券库的城市名来自截图（如"扬州(泰州)"），
+    因此 from/to 允许中文，交给 spring_store.resolve_city 归一。
+    """
+    try:
+        for key in ("from", "to"):
+            if not str(params.get(key) or "").strip():
+                raise fr.UsageError(f"缺少参数 --{key}")
+        date = fr.parse_date(params["date"]) if str(params.get("date") or "").strip() else None
+        return (str(params["from"]).strip(), str(params["to"]).strip(), date, None)
+    except fr.UsageError as exc:
+        return None, None, None, (400, {"ok": False, "error": str(exc)})
+
+
+def _api_spring_flights(params):
+    """春秋可用航班/商品——**不返回价格**（v1.13，ISSUE-022）。
+
+    价格由券规则折算，必须走 /api/spring/quote；两级接口分离是本需求的核心约束，
+    因此本接口的返回体里 price_returned 恒为 False，且不含任何价格字段。
+    """
+    dep, arr, date, err = _spring_params(params)
+    if err:
+        return err
+    try:
+        payload = spring_store.available_flights(dep, arr, date.isoformat() if date else None)
+    except ValueError as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    if not payload.get("ok"):
+        return 400, payload
+    return 200, payload
+
+
+def _api_spring_quote(params):
+    """券匹配 + 按券规则折算单价（209 元 2 次卡 → 104.5 元/次）。"""
+    dep, arr, date, err = _spring_params(params)
+    if err:
+        return err
+    try:
+        payload = spring_store.coupon_quote(dep, arr, date.isoformat() if date else None)
+    except ValueError as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    if not payload.get("ok"):
+        return 400, payload
+    return 200, payload
+
+
 GET_APIS = {
     "/api/cities": _api_cities,
     "/api/sources": _api_sources,
@@ -422,6 +470,8 @@ GET_APIS = {
     "/api/calendar": _api_calendar,
     "/api/search": _api_search,
     "/api/deals": _api_deals,
+    "/api/spring/flights": _api_spring_flights,
+    "/api/spring/quote": _api_spring_quote,
     "/api/watch/list": _api_watch_list,
     "/api/watch/check": _api_watch_check,
 }
