@@ -2,7 +2,8 @@
 """RapidAPI·Google Flights 适配器离线单测（全 mock 网络，零真实请求）。
 
 覆盖：未配 Key 不接入、真实结构映射（航班号/时刻/机场英文全称/含税价）、
-无价格行程丢弃、缓存命中零请求、日/月双重配额、429 即停。
+有航段无价行程保留（v1.14 改口径）、无航段行程丢弃、缓存命中零请求、
+日/月双重配额、429 即停。
 """
 
 import datetime as dt
@@ -44,7 +45,7 @@ _SEARCH = {"status": 200, "data": {
                                     "time": "2026-11-05 13:30"},
               "arrival_airport": {"code": "CAN", "name": "Guangzhou Baiyun International Airport",
                                   "time": "2026-11-05 14:40"}}]},
-        {"price": None, "legs": []},  # 无价格/无段 → 丢弃不编造
+        {"price": None, "legs": []},  # 无航段 → 连航班号/时刻都没有，无法成像
     ]}}
 
 
@@ -106,7 +107,7 @@ class RapidapiGoogleFlightsTest(unittest.TestCase):
         source = self._source()
         with self._patched(source, opener):
             rows = source.search("SHA", "CAN", DATE)
-        self.assertEqual(len(rows), 2, "无价格行程必须丢弃")
+        self.assertEqual(len(rows), 2, "无航段行程丢弃；有航段无价的行程保留（v1.14）")
         direct, transfer = rows
         self.assertEqual(direct["flight_no"], "9C8835")
         self.assertEqual(direct["depart_time"], "07:20")

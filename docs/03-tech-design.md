@@ -137,6 +137,11 @@ CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源�
    必须显式在 `env` 里带 `FARE_RADAR_OFFLINE=1`（ISSUE-020 真实扣费事故）。该变量**不要**在
    测试模块里全局设置，否则会污染同进程内需要 `active` 状态的适配器单测。
 7. **计费型接口先算钱**：接入按次扣费的接口前，先确认"跑一次全量测试是否花钱"，再跑。
+8. **"有航班、无报价"不得整条丢弃**（v1.14，ISSUE-023）：上游常返回真实行程但 `price: null`
+   （临近起飞、该日期未给价）。丢弃会让用户以为"查不到航班"。强制口径：航班字段照实展示，
+   `price`/`total_estimate` 置 `None`、`price_note` 写 `base.NO_PRICE_NOTE`，**不填 0、不出 ¥**；
+   此类行不参与排序首位、不参与「◀ 最低价」、不触发低价提醒（由 `fareradar.eligible_for_lowest`
+   与 `_price_sort_key` 统一把关）。唯仍可丢弃的是**缺航段/缺时刻**的行程——那连"哪一班"都说不清。
 
 实现参考：`sources/rapidapi_sky.py` 的 `_fetch`（status 校验）、`EMPTY_CACHE_TTL`、
 `empty_note`；引擎侧 `fareradar.empty_notes()` 为三入口共用的原因词表来源。

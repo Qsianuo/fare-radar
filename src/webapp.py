@@ -166,7 +166,7 @@ def _api_search(params):
     lowest = fr.lowest_eligible(offers, date)
     catalog = {s["id"]: s["description"] for s in source_catalog()}
     rows = [{
-        "price": o["price"],                       # 票面价
+        "price": o.get("price"),                   # 票面价（v1.14：上游未给价时为 null）
         "total_estimate": fr.total_price(o),       # 到手价（排序唯一口径）
         "source_id": o["source_id"],
         "source_name": o["source_name"],
@@ -189,6 +189,7 @@ def _api_search(params):
         "is_special_fare": bool(o.get("is_special_fare")),
         "is_snapshot": bool(o.get("is_snapshot")),
         "note": fr.search_note(o, date),           # 含"另有 N 个渠道有售"
+        "price_note": o.get("price_note"),         # v1.14：上游未给价时的说明（有价行为 null）
         "risk_flags": fr.risk_flags(o, date),
         "is_deal": bool(o.get("is_deal")),
         "is_lowest": o is lowest,
@@ -226,6 +227,9 @@ def _api_search(params):
             else:
                 empty_hint = "该航线暂无可用报价（已登记票源见 /api/sources）。"
     price_insight = fr.price_insights(sources, origin, destination, date)
+    # v1.14（ISSUE-023）：报价可用率——有航班但上游没给价的条数，前端显式说明，
+    # 避免"页面上有行却没有金额"被当成渲染故障
+    no_price_count = sum(1 for o in offers if fr.total_price(o) is None)
     return 200, {
         "ok": True,
         "route": f"{fr.city(origin)} → {fr.city(destination)}",
@@ -242,6 +246,7 @@ def _api_search(params):
         "card_hints": hints,                 # 命中的次卡/省钱卡（不计入 offers）
         "price_insights": price_insight,     # 上游行情参考（无则 null，绝不推算）
         "offers": rows,
+        "no_price_count": no_price_count,    # 有航班、无报价的条数（0 表示全部有价）
         "alert_hit": alert_hit,
         "warning": warning,
         "empty_hint": empty_hint,

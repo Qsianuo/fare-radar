@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .base import Source, offline_mode, OFFLINE_REASON
+from .base import Source, offline_mode, OFFLINE_REASON, NO_PRICE_NOTE
 from . import airlines
 
 CONFIG_NAME = "variflight_config.json"
@@ -273,22 +273,25 @@ class VariflightSource(Source):
         return rows, (None if rows else "上游返回的行程均无可用舱位价格")
 
     def _to_offer(self, flight):
-        cabins = [c for c in (flight.get("cabins") or [])
-                  if isinstance(c, dict) and isinstance(c.get("price"), (int, float))]
-        if not cabins:
-            return None                      # 无价格不编造
-        econ = [c for c in cabins if str(c.get("cabinclass", "")).upper() == "Y"]
-        pick = min(econ or cabins, key=lambda c: c["price"])
-        price = round(pick["price"])
-        if price <= 0:
-            return None
-
+        # v1.14（ISSUE-023）：先取时刻，再判价格——"有航班、无舱位报价"不再整条丢弃，
+        # 照实展示航班并把价格标为未披露（不填数、不参与排序与最低价竞争）。
         dep_ts, arr_ts = flight.get("flightdeptimeplandate"), flight.get("flightarrtimeplandate")
         dep_dt = self._beijing(dep_ts)
         arr_dt = self._beijing(arr_ts)
         if dep_dt is None or arr_dt is None:
             return None                      # 时刻缺失无法核实，宁可不显示
         minutes = int((arr_dt - dep_dt).total_seconds() // 60)
+
+        cabins = [c for c in (flight.get("cabins") or [])
+                  if isinstance(c, dict) and isinstance(c.get("price"), (int, float))
+                  and not isinstance(c.get("price"), bool)]
+        econ = [c for c in cabins if str(c.get("cabinclass", "")).upper() == "Y"]
+        pick = min(econ or cabins, key=lambda c: c["price"]) if cabins else None
+        price = round(pick["price"]) if pick else None
+        if price is not None and price <= 0:
+            price = None                     # 0 元票价视为无效报价，不展示
+        has_price = price is not None
+
         code = str(flight.get("flightcompany") or "").strip()
         carrier = airlines.carrier_name(code) or _CARRIER_CN.get(code) or ""
 
@@ -299,12 +302,13 @@ class VariflightSource(Source):
             return f"{name}（{code}{' ' + terminal if terminal else ''}）"
 
         stops = flight.get("stopflag") or 0
+        cabin_text = (pick.get("classname") if pick else "") or ("经济舱" if has_price else "舱位未披露")
         return {
             "source_id": self.source_id,
             "source_name": self.display_name,
             "product": ("直飞" if not stops else
                         f"经{str(flight.get('stopcityname') or flight.get('stopairportname') or '中转').strip()}中转")
-                       + "｜" + (carrier or code) + f"｜{pick.get('classname') or '经济舱'}",
+                       + "｜" + (carrier or code) + f"｜{cabin_text}",
             "flight_no": str(flight.get("flightno") or "").replace(" ", ""),
             "carrier_code": code,
             # 未收录的航司留空：flight_display 只在有中文名时拼接，避免"GJ GJ8604"
@@ -319,9 +323,10 @@ class VariflightSource(Source):
             "price": price,
             # 上游 oilfee/tax 字段为空，票价是否含税未明示 → 按票面价处理，
             # 由引擎用全站口径补 fee_breakdown/total_estimate（不重复叠加）
-            "tax_included": False,
+            "tax_included": False if has_price else None,
             "is_deal": False,
-            "note": _HONESTY_NOTE,
+            "price_note": None if has_price else NO_PRICE_NOTE,
+            "note": _HONESTY_NOTE if has_price else _HONESTY_NOTE + "；价格未披露：该航班当日无可用舱位报价",
         }
 
     @staticmethod

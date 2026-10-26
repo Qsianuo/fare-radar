@@ -29,7 +29,7 @@ import fareradar as fr  # noqa: E402
 import webapp  # noqa: E402
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_INFO = {"name": "fareradar", "version": "1.13.0",
+SERVER_INFO = {"name": "fareradar", "version": "1.14.0",
                "title": "低价票雷达 FareRadar"}
 SUPPORTED_METHODS = ("initialize", "ping", "tools/list", "tools/call")
 
@@ -114,12 +114,17 @@ def _fmt_search(params):
     for i, o in enumerate(offers):
         mark = "◀最低价" if o.get("is_lowest") else ""
         flags = "、".join(o.get("risk_flags") or [])
-        line = (f"{i + 1}. ¥{o.get('total_estimate')}{mark} "
+        # v1.14：无价行（上游有航班未给价）用文案占位，绝不输出 ¥None
+        price = fr.total_price(o)
+        amount = f"¥{price}" if price is not None else "价格未披露"
+        line = (f"{i + 1}. {amount}{mark} "
                 f"{o.get('flight_no', '—')} {o.get('depart_time')}→{o.get('arrive_time')} "
                 f"{o.get('duration_text', '')} {o.get('carrier_name', '')}"
                 f"〔{o.get('source_name')}〕{o.get('product', '')}")
         if flags:
             line += f" ⚠{flags}"
+        if o.get("price_note"):
+            line += f"｜{o['price_note']}"
         fee = (o.get("fee_breakdown") or {}).get("included_desc")
         if fee:
             line += f"｜{fee}"

@@ -26,6 +26,12 @@ import os as _os
 OFFLINE_ENV = "FARE_RADAR_OFFLINE"
 OFFLINE_REASON = "测试离线模式（FARE_RADAR_OFFLINE=1）：不发起任何真实请求"
 
+# v1.14（ISSUE-023）：上游"有航班、无报价"的统一措辞。
+# 三个入口（Web/CLI/MCP）与全部联网适配器共用同一句，禁止各写一套。
+# 语义边界：航班字段（航班号/时刻/机场/承运人）为上游真实值，价格标"未披露"，
+# 绝不填数；此类行不参与排序、不参与最低价竞争、不触发低价提醒。
+NO_PRICE_NOTE = "上游未提供该航班报价（该日期上游未给价）"
+
 
 def offline_mode():
     """测试离线开关是否开启（所有联网票源必须据此短路）。"""

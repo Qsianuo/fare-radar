@@ -130,9 +130,11 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 
 内置调用纪律（自动生效）：Token 缓存复用、同航线同日期结果缓存 30 分钟、**当日最多 200 次调用**（达到自动停用当日渠道）、超时 10 秒、遇 429 立即停不重试。注意：Amadeus 对**中国国内航线覆盖有限**，返回为空时如实显示无报价；测试环境数据可能为缓存，购买以官方渠道为准。
 
-## 作为 MCP Server 使用（v1.13.0，AI 客户端可直连）
+## 作为 MCP Server 使用（v1.14.0，AI 客户端可直连）
 
 本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` / `spring_flights` / `spring_coupon_quote` 六个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
+
+**无报价不等于没航班**（v1.14）：上游有时返回真实航班却不给价（例如银川→深圳 2026-10-27 的 BK3037）。此时结果行照常出现，金额位显示「价格未披露」，该行不参与排序与最低价判断——不会因为"没价"而把航班藏起来，也绝不拿 0 或估算值顶上。
 
 其中春秋券库刻意拆成两级：`spring_flights` 只回答"这条航线这一天有没有券可用"，**不返回任何价格**；`spring_coupon_quote` 才按券规则折算单价（209 元秋季 2 次卡 → 104.5 元/次），且含税费与不含机建燃油的券**不合并排名**。详见 `docs/08-spring-coupon-design.md`。
 

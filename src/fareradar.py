@@ -120,9 +120,30 @@ def parse_date(raw):
 
 
 def total_price(offer):
-    """到手价（排序/最低价/提醒唯一口径）；缺 total_estimate 时退回票面价。"""
+    """到手价（排序/最低价/提醒唯一口径）；缺 total_estimate 时退回票面价。
+
+    v1.14（ISSUE-023）：上游"有航班、无报价"的行两者都可能为 None，
+    此时返回 None——调用方必须当"无价"处理，不得拿 0 占位。
+    """
     total = offer.get("total_estimate")
-    return total if total is not None else offer["price"]
+    return total if total is not None else offer.get("price")
+
+
+def has_price(offer):
+    """该行是否有可用价格（票面价或到手价任一存在）。"""
+    return total_price(offer) is not None
+
+
+def _price_sort_key(offer):
+    """价格升序键：无价行恒排在所有有价行之后（None 不可比较，且不该占首位）。"""
+    price = total_price(offer)
+    return (price is None, price if price is not None else 0)
+
+
+def price_text(offer):
+    """价格展示文案（CLI/MCP 同源）：有价 → ¥N；无价 → 「价格未披露」，绝不出 ¥。"""
+    price = total_price(offer)
+    return f"¥{price}" if price is not None else "价格未披露"
 
 
 def retired_names(alert):
@@ -158,7 +179,9 @@ def collect(sources, origin, destination, date):
             for offer in source.search(origin, destination, date):
                 offer["entry_url"] = source.entry_url
                 offer["entry_note"] = source.entry_note
-                if offer.get("total_estimate") is None and km is not None:
+                # v1.14：无价行不进费用引擎（price=None 参与运算只会造出假数字）
+                if (offer.get("total_estimate") is None and km is not None
+                        and offer.get("price") is not None):
                     offer["fee_breakdown"] = fees.fee_breakdown(
                         offer["price"], offer.get("tax_included", True), km,
                         offer.get("included_desc"))
@@ -189,8 +212,8 @@ def dedup_offers(offers, date):
         channels = {o["source_id"] for o in group}
         if len(channels) < 2:
             continue  # 单渠道航班（含同渠道多班次）一律保留
-        ordered = sorted(group, key=lambda o: (total_price(o), o["price"],
-                                               o["source_id"], o.get("product", "")))
+        ordered = sorted(group, key=lambda o: (_price_sort_key(o), o["source_id"],
+                                               o.get("product", "")))
         winner = ordered[0]
         for loser in ordered[1:]:
             dropped.add(id(loser))
@@ -266,9 +289,12 @@ def eligible_for_lowest(offer, date):
 
 
 def rank_offers(offers, date):
-    """展示排序：可竞争最低价的行在前按到手价升序，其余（含被披露原因的行）在后。"""
+    """展示排序：可竞争最低价的行在前按到手价升序，其余（含被披露原因的行）在后。
+
+    v1.14（ISSUE-023）：无价行（上游未给价）排在所有有价行之后，且不参与最低价。
+    """
     return sorted(offers, key=lambda offer: (not eligible_for_lowest(offer, date),
-                                             total_price(offer), offer["price"],
+                                             *_price_sort_key(offer),
                                              offer["source_id"], offer.get("product", "")))
 
 
@@ -470,7 +496,9 @@ def _airport_text(offer):
 
 def _fee_text(offer):
     breakdown = offer.get("fee_breakdown")
-    return breakdown["included_desc"] if breakdown else "—"
+    if breakdown:
+        return breakdown["included_desc"]
+    return "价格未披露（无税费口径可算）" if not has_price(offer) else "—"
 
 
 def _print_card_hints(hints):
@@ -549,10 +577,15 @@ def cmd_search(args):
             and total_price(lowest) <= alert["threshold"]):
         print(f"[低价提醒] 当前最低到手价 ¥{total_price(lowest)} ≤ 你的底价 "
               f"¥{alert['threshold']}，可以出手了！")
-    if lowest is None:
+    if lowest is None and offers and not any(has_price(o) for o in offers):
+        print(f"[提示] 本次找到 {len(offers)} 个航班，但上游均未提供报价（价格标为「未披露」，"
+              "不做排序、不做最低价判断）。航班信息真实，购票前请到官方渠道核实价格。")
+    elif lowest is None:
         print("本次结果中没有可竞争的最低价（原因见各行备注）。")
     print_table(("到手价", "票面价", "票源", "航班/套餐", "时间", "机场", "税费", "备注"),
-                [(f"¥{total_price(o)}", f"¥{o['price']}", o["source_name"], _flight_text(o),
+                [(price_text(o),
+                  f"¥{o['price']}" if o.get("price") is not None else "未披露",
+                  o["source_name"], _flight_text(o),
                   _time_text(o), _airport_text(o), _fee_text(o), search_note(o, date))
                  for o in offers], mark_index=offers.index(lowest) if lowest else None)
     return 0

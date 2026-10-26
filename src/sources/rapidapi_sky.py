@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .base import Source, offline_mode, OFFLINE_REASON
+from .base import Source, offline_mode, OFFLINE_REASON, NO_PRICE_NOTE
 from . import airlines
 
 CONFIG_NAME = "rapidapi_config.json"
@@ -167,10 +167,13 @@ class RapidapiFlightSource(Source):
         legs = itinerary.get("legs") or []
         if not legs:
             return None
-        price = itinerary.get("price")
-        if not isinstance(price, (int, float)):
-            return None  # 无价格不编造
-        price = round(price)
+        raw_price = itinerary.get("price")
+        # v1.14（ISSUE-023）：上游常返回"有航班、无报价"（price=null，如临近起飞
+        # 或该日期 Google 侧未给价）。过去一律丢弃，导致用户看到"查不到航班"——
+        # 实际航班真实存在。现行口径：**航班字段照实展示，价格标未披露**，
+        # 绝不填数、不参与排序与最低价竞争（由 fareradar.eligible_for_lowest 把关）。
+        has_price = isinstance(raw_price, (int, float)) and not isinstance(raw_price, bool)
+        price = round(raw_price) if has_price else None
         first, last = legs[0], legs[-1]
         flight_no = "/".join(
             str(leg.get("flight_number", "")).replace(" ", "") for leg in legs)
@@ -198,11 +201,15 @@ class RapidapiFlightSource(Source):
             # 机场名用上游真实英文全称（比本地注册表更权威）
             "dep_airport": f"{dep.get('name', '未披露')}（{dep.get('code', '')}）",
             "arr_airport": f"{arr.get('name', '未披露')}（{arr.get('code', '')}）",
-            "price": price, "tax_included": True, "is_deal": False,
-            "fee_breakdown": {"airport_fee": None, "fuel_fee": None, "tax_included": True,
-                              "included_desc": "Google Flights 含税总价（未拆分机建/燃油）"},
+            "price": price, "tax_included": True if has_price else None, "is_deal": False,
+            "fee_breakdown": ({"airport_fee": None, "fuel_fee": None, "tax_included": True,
+                               "included_desc": "Google Flights 含税总价（未拆分机建/燃油）"}
+                              if has_price else None),
             "total_estimate": price,
-            "note": "真实接口·Google Flights（价格缓存 6 小时，下单以官方渠道为准）",
+            "price_note": None if has_price else NO_PRICE_NOTE,
+            "note": ("真实接口·Google Flights（价格缓存 6 小时，下单以官方渠道为准）" if has_price
+                     else "真实接口·Google Flights·价格未披露（上游该日期未返回报价，"
+                          "航班信息真实，购票前请到官方渠道核实价格）"),
         }
 
     def _to_insights(self, raw):
@@ -246,15 +253,20 @@ class RapidapiFlightSource(Source):
         payload = self._fetch(origin, destination, date)
         body_status = payload.get("status")
         data = payload.get("data") or {}
+        raw_total = len((data.get("best_flights") or []) + (data.get("other_flights") or []))
         rows = []
         for itinerary in ((data.get("best_flights") or []) + (data.get("other_flights") or []))[:8]:
             row = self._to_offer(itinerary)
             if row:
                 rows.append(row)
+        quoted = sum(1 for r in rows if r.get("price") is not None)
         ttl = OFFER_CACHE_TTL if rows else EMPTY_CACHE_TTL
         self._cache_write(key, {"expire_at": time.time() + ttl,
                                 "rows": rows,
                                 "body_status": body_status,
+                                # v1.14：留痕上游规模与无价条数，供 empty_note 说清原因
+                                "raw_itineraries": raw_total,
+                                "no_price_count": len(rows) - quoted,
                                 "insights": self._to_insights(data.get("price_insights"))})
         return rows
 
@@ -270,9 +282,13 @@ class RapidapiFlightSource(Source):
         if status == 204:
             return "上游 Google Flights 无该航线数据（status 204：No content）"
         if status == 200:
-            # 与 204 语义不同：查询本身成功，只是没返回可售行程
-            # （航线真实存在但上游无可售报价，或该日期尚无排班）
-            return "上游查询成功但未返回可售行程（可能有航班但无可售报价，或该日期尚无排班）"
+            # 与 204 语义不同：查询本身成功，只是没返回可售行程。
+            # v1.14 起要用上游规模说清"是压根没有行程，还是有行程但缺字段被丢弃"
+            raw = cached.get("raw_itineraries")
+            if isinstance(raw, int) and raw > 0:
+                return (f"上游返回 {raw} 条行程但均缺少可展示的航班字段"
+                        f"（无航班号/时刻），无法成行展示")
+            return "上游查询成功但未返回可售行程（该日期上游无排班，或航线无可售报价）"
         if status not in (None, 200):
             return f"上游返回 status {status}"
         return None

@@ -197,12 +197,28 @@ class VariflightOfflineTest(unittest.TestCase):
         self.assertFalse(row["tax_included"], "上游未明示含税 → 按票面价交引擎补费用")
         self.assertEqual(row["source_id"], "variflight")
 
-    def test_mapping_drops_flight_without_price(self):
+    def test_mapping_keeps_flight_without_price(self):
+        """v1.14（ISSUE-023）口径改定：有航班、无报价 → 保留航班、价格标未披露。
+
+        旧行为（整条丢弃）会让用户看到"查不到航班"，实际航班真实存在。
+        """
         source = self._source()
-        bad = dict(self._FLIGHT, cabins=[])
-        self.assertIsNone(source._to_offer(bad), "无舱位价格必须丢弃，不编造")
-        bad2 = dict(self._FLIGHT, cabins=[{"cabinclass": "Y", "price": "x"}])
-        self.assertIsNone(source._to_offer(bad2), "非数字价格必须丢弃")
+        for cabins in ([], [{"cabinclass": "Y", "price": "x"}]):
+            row = source._to_offer(dict(self._FLIGHT, cabins=cabins))
+            self.assertIsNotNone(row, "有航班无报价不得整条丢弃")
+            self.assertIsNone(row["price"], "价格必须为 None，不得填 0 或编造")
+            self.assertIsNone(row["tax_included"])
+            self.assertIn("上游未提供该航班报价", row["price_note"])
+            self.assertIn("价格未披露", row["note"])
+            self.assertEqual(row["flight_no"], "3U6542", "航班字段必须照实保留")
+            self.assertEqual(row["depart_time"], "10:35")
+            self.assertIn("舱位未披露", row["product"])
+
+    def test_mapping_drops_flight_without_time(self):
+        """时刻缺失：既不能核实时长也无法排序 → 仍丢弃（不编造时刻）。"""
+        source = self._source()
+        bad = dict(self._FLIGHT, flightarrtimeplandate=0)
+        self.assertIsNone(source._to_offer(bad))
 
     def test_mapping_cross_day_and_transfer(self):
         source = self._source()
