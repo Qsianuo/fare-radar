@@ -387,6 +387,44 @@
 - 流程：ISSUE-026 / PR-027 / RELEASE-v1.16.1 同步落盘，`--no-ff` 合并 main，tag v1.16.1。
 - 遗留：live token 仍需用户本人过 Stripe KYC；外币折算是否开独立开关待产品决策。
 
+## S27 · Duffel live 激活判定关闭（v1.16.2，2026-10-27）
+
+**触发**：用户「duffel 已注册登录完成，你来控制浏览器做」，随后「KYC 怎么过，拿美元价格也可以」。
+目标是关掉「缺 live token」这个挂了两轮的遗留项，而不是继续挂着。
+
+**过程与卡点**
+- 浏览器接管：复制 profile 抄登录态**失败**——`Edge App-Bound Encryption` 把 cookie 主密钥
+  绑在原 `user-data-dir` 路径上，副本里 Duffel cookie 读出 0 条；必须用原始 `User Data`
+  + `--profile-directory="Profile 1"`。
+- `agent-browser connect 9222` 反复超时且会导致 Edge 退出 → 改用自建纯标准库 CDP 客户端
+  （`F:\cdp\cdp.py`，含 `frameop.py` 用于进入子框架）。
+- 网络：Duffel 直连可用，但 **Stripe 的 CDN 与 hCaptcha 直连被挡**，表单永远转圈；
+  打开 Clash（7897）后正常。教训：判断「站点能不能开」要分别测主站与第三方依赖域。
+- 表单定位：Stripe 入驻表单渲染在 `connect-js.stripe.com/ui_layer_*.html` **子框架**内，
+  外层 `document` 只有 2 个无关 input → 用 `Page.getFrameTree` + `Page.createIsolatedWorld`
+  拿到独立执行上下文再操作；外层 `a[role=button]` 文本「继续」可 `click()` 生效。
+- 第 1 步商家类型选 `Individual` 通过；第 2 步暴露真卡点：**国家/地区下拉只有「美国」且为灰尘**，
+  固定 `+1` 电话、强制「州」+ 5 位邮编、**SSN 后四位**必填。
+
+**判定**
+1. 要的是美国身份；Stripe 支持的国家/地区列表不含中国大陆，账户也无法改成内地。
+   编造美国住址/SSN 属身份欺诈且会被风控拒 → **不做**。
+2. 即便激活也不解决比价：实测三条航线报价全为 USD，按「外币不折算」红线不参与比价。
+   所以这不是成本问题，是「折腾完也没用」。
+
+**改动**（仅文案 + 测试，零逻辑变更）
+- `_NOTE_NO_KEY` 重写、`tagline` / `entry_note` 改口径；README 加 ⚠️ 实测结论块；
+  `docs/10` 新增 §0 结论节（含 KYC 逐项表）。
+- `tests/test_duffel.py` +2 例锁住文案（原因必含 Stripe/美国/SSN/中国大陆；入口文案
+  不得回到「注册即启用」），25 → **27 例**，全量 **291 例全绿**。
+- 零真实请求：跑前跑后 `juhe/day_counter.json` 均为 `{"date":"2026-10-27","calls":3}`
+  （该 3 次是用户当天在网页端查询产生的，非测试所致），未生成 `.duffel_cache/`。
+
+**流程**：ISSUE-027 / PR-028 / RELEASE-v1.16.2 同步落盘，`--no-ff` 合并 main，tag v1.16.2。
+
+**遗留**：Duffel 代码保留（有海外主体时填 live token 即可启用）；国内线补价仍待
+聚合数据配额决策。
+
 ## 版本记录（续）
 
 | 版本 | 内容 | 位置 |
@@ -411,6 +449,7 @@
 | v1.15.0 | 接入聚合数据国内航班+缓存票价（补 RapidAPI 缺价，实测 33/33 全带价）+ 航司机翻修正（carriers.py）+ 离线注入失效修复（守卫测试） | tag v1.15.0，PR-025，ISSUE-024 |
 | v1.16.0 | Amadeus 自助门户 2026-07-17 下线归档（代码保留、文案改真）+ 接入 Duffel 作国际线第二真源（测试模式=虚构数据硬拒绝、外币不折算）+ 国际航司/机场中文名 | tag v1.16.0，PR-026，ISSUE-025 |
 | v1.16.1 | Duffel 实测校准：三条航线打样确认字段形态 + 响应级 `live_mode` 闸门 + 排序后截取（上游不保证按价返回）+ fixture 按实测回填；确认报价货币全为 USD | tag v1.16.1，PR-027，ISSUE-026 |
+| v1.16.2 | Duffel live 激活判定关闭：实测 Stripe KYC 账户国家锁美国（需美国地址/州/+1 电话/SSN 后四位），大陆个人无合法路径；三处渠道文案改真 + 测试锁口（纯文案/测试，无逻辑变更） | tag v1.16.2，PR-028，ISSUE-027 |
 
 ## 过程改进记录（复盘用）
 

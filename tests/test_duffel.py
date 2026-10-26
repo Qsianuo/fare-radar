@@ -109,6 +109,20 @@ class StatusGateTest(_TmpSourceCase):
         self.assertEqual(source.mode, "none")
         self.assertIn("未配置访问令牌", source.status_reason)
 
+    def test_no_config_reason_states_kyc_blocker(self):
+        """v1.16.2 实测：live 需过 Stripe KYC 且账户国家锁美国 —— 原因里必须讲清，
+        否则下一个人（包括维护者自己）还会照着「注册即得 Key」白跑一遍。"""
+        source = duffel.DuffelSource(config_path=self.cfg)
+        reason = source.status_reason
+        for word in ("Stripe", "美国", "SSN", "中国大陆"):
+            self.assertIn(word, reason, f"闸门原因未点明 {word}")
+
+    def test_entry_note_matches_kyc_reality(self):
+        """渠道入口文案不得再写「注册后自配 Key 即可启用」这种已证伪的说法。"""
+        note = duffel.DuffelSource.entry_note
+        self.assertIn("SSN", note)
+        self.assertIn("不可用", note)
+
     def test_live_token_is_active(self):
         source = self._source()
         self.assertEqual(source.mode, "live")

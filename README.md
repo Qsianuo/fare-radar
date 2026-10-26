@@ -133,6 +133,13 @@ Duffel 注册即用、**搜索不收费**（下单才结算）、REST + JSON、�
 2. 写入 `src/sources/duffel_config.json`：`{"access_token": "duffel_live_...", "proxy": ""}`。
 3. 重启 `python src/webapp.py`，渠道「Duffel 真实接口」即变为 `active`。
 
+> **⚠️ 实测结论（v1.16.2）：中国大陆个人无法完成 live 激活，本渠道实际不可用。**
+> `Go live` 跳到 Stripe Connect 入驻，Duffel 开给账号的 Stripe 账户**国家锁定为美国**
+> （国家下拉只有一个选项「美国」、且为灰色），随后强制要求：美国住址 + 州 + 5 位邮编、
+> 固定 `+1` 电话、**SSN 后四位**。Stripe 官方支持的国家/地区列表不含中国大陆，
+> 也不支持把该账户改成内地。想走通只有三条路：美国主体（EIN + 美国地址 + SSN/ITIN）、
+> 香港主体、新加坡主体。代码保留，渠道恒为 `not_available`。
+
 **测试模式 token（`duffel_test_`）一律拒绝**：该模式返回的是沙盒航司 Duffel Airways
 （IATA `ZZ`）的**虚构航班与虚构价格**（官方原话 "you won't see realistic flight schedules
 or prices"），与本工具「零编造」红线直接冲突，故不接入、**也不发起任何请求**。
@@ -161,7 +168,7 @@ or prices"），与本工具「零编造」红线直接冲突，故不接入、*
 **价格口径**：`ticketPrice` 是否含机建燃油上游未明示，按票面价处理（`tax_included=false`），
 到手价由引擎补"机建 ¥50 + 燃油"并逐行标注——不把它当成含税价，避免低估。
 
-## 作为 MCP Server 使用（v1.16.1，AI 客户端可直连）
+## 作为 MCP Server 使用（v1.16.2，AI 客户端可直连）
 
 本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` / `spring_flights` / `spring_coupon_quote` 六个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
 
