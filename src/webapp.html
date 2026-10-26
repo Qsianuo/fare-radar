@@ -205,6 +205,9 @@ tr.row-lowest:hover{background:var(--brand-soft)!important}
 tr.row-lowest .price{font-size:21px;color:var(--brand-strong)}
 .fee-line{margin-top:3px;font-size:11.5px;line-height:1.5;color:var(--ink-2)}
 .base-price{margin-top:1px;font-size:11.5px;color:var(--muted)}
+/* v1.14：上游有航班无报价 —— 金额位改文案，绝不显示 ¥0 / ¥null */
+.price-na{font-size:15px;color:var(--muted);font-weight:700}
+.price-note{margin-top:3px;font-size:11.5px;line-height:1.5;color:var(--muted);max-width:190px}
 .mark-lowest{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
   background:var(--brand);color:#fff;font-size:11.5px;font-weight:700;vertical-align:2px}
 .source-name{font-weight:600}
@@ -736,8 +739,11 @@ function resultMeta(data) {
   const m = el("div", "result-meta");
   m.append(el("span", "meta-route", data.route));
   m.append(el("span", "meta-sub", data.date + " · " + data.weekday));
-  m.append(el("span", "meta-sub", (data.offers ? data.offers.length : 0)
-    + " 个报价 · " + (data.price_basis || "到手价")));
+  const total = data.offers ? data.offers.length : 0;
+  const noPrice = data.no_price_count || 0;
+  m.append(el("span", "meta-sub", total + " 个结果"
+    + (noPrice ? "（其中 " + noPrice + " 条上游未给价）" : " · 均有报价")
+    + " · " + (data.price_basis || "到手价")));
   return m;
 }
 /* ---- 渠道状态 chips：未接入渠道灰化显式声明（ISSUE-012 成功标准 ④） ---- */
@@ -756,7 +762,12 @@ function sourceChips(list) {
 function priceCell(o) {
   const td = el("td", "cell-price");
   const line = el("div");
-  line.append(el("strong", "price", "¥" + o.total_estimate));  // 到手价 = 主数字
+  if (o.total_estimate == null) {
+    // 上游有航班、无报价：显示文案而非金额（零编造：不填 0、不出 ¥）
+    line.append(el("strong", "price price-na", "价格未披露"));
+  } else {
+    line.append(el("strong", "price", "¥" + o.total_estimate));  // 到手价 = 主数字
+  }
   if (o.is_lowest) line.append(el("span", "mark-lowest", "最低价"));
   td.append(line);
   if (o.fee_breakdown && o.fee_breakdown.included_desc) {
@@ -765,6 +776,7 @@ function priceCell(o) {
   if (o.price != null && o.price !== o.total_estimate) {
     td.append(el("div", "base-price", "票面 ¥" + o.price));
   }
+  if (o.price_note) td.append(el("div", "price-note", o.price_note));
   return td;
 }
 function flightTimeLine(o) {
