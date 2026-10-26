@@ -20,6 +20,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import sources.amadeus as _amadeus  # noqa: E402
+import sources.duffel as _duffel  # noqa: E402
 import sources.juhe as _juhe  # noqa: E402
 import sources.rapidapi_sky as _rapidapi  # noqa: E402
 import sources.travelpayouts as _travelpayouts  # noqa: E402
@@ -32,3 +33,4 @@ _rapidapi.CONFIG_NAME = _OFFLINE_ABSENT
 _variflight.CONFIG_NAME = _OFFLINE_ABSENT
 _travelpayouts.CONFIG_NAME = _OFFLINE_ABSENT
 _juhe.CONFIG_NAME = _OFFLINE_ABSENT
+_duffel.CONFIG_NAME = _OFFLINE_ABSENT

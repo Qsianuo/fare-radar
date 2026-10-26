@@ -14,6 +14,7 @@ from .base import Source
 from .douyin_groupbuy import DouyinGroupbuySource
 from .douyin_live import DouyinLiveSource
 from .douyin_miniapp import DouyinMiniappSource
+from .duffel import DuffelSource
 from .juhe import JuheFlightSource
 from .ota import OtaSource
 from .rapidapi_sky import RapidapiFlightSource
@@ -28,15 +29,17 @@ __all__ = ["Source", "airlines", "cities", "fees", "pricing", "snapshot_pack",
 def all_sources():
     """返回全部已登记票源的新实例列表（注册顺序即展示顺序）。
 
-    真实接口适配器（均默认关闭/按配置激活）：AmadeusSource（自助门户已下线，
-    仅存量企业 Key 可用）、RapidapiFlightSource（v1.7，免费档订阅）、
+    真实接口适配器（均默认关闭/按配置激活）：RapidapiFlightSource（v1.7，免费档订阅）、
     VariflightSource（v1.11 骨架，国内航班与票价；schema 待校准，未校准前不出数据）、
-    JuheFlightSource（v1.15，聚合数据国内航班 + 缓存票价，按次计费、日/月双硬停）。
+    JuheFlightSource（v1.15，聚合数据国内航班 + 缓存票价，按次计费、日/月双硬停）、
+    DuffelSource（v1.16，国际线第二真源；只认 live token，测试模式为虚构数据故拒绝接入）、
+    AmadeusSource（**2026-07-17 自助门户已下线**，仅存 Enterprise 合同制，个人不可注册；
+    代码保留备查，恒为 not_available）。
     未配置 Key 时 status=not_available，不出数据行、如实声明。
     """
     return [SnapshotPackSource(), RapidapiFlightSource(), VariflightSource(),
-            JuheFlightSource(), TravelpayoutsCalendarSource(), AmadeusSource(),
-            AirlineSource(), OtaSource(),
+            JuheFlightSource(), DuffelSource(), TravelpayoutsCalendarSource(),
+            AmadeusSource(), AirlineSource(), OtaSource(),
             DouyinGroupbuySource(), DouyinMiniappSource(), DouyinLiveSource()]
 
 

@@ -306,6 +306,45 @@
   引擎集成实测 `INC→CAN 2026-11-01` 去重后 29 条、税费与到手价均由引擎补全。
 - 流程：ISSUE-024 / PR-025 / RELEASE-v1.15.0 同步落盘，`--no-ff` 合并 main，tag v1.15.0。
 
+## S24 迭代十九：v1.16.0 Amadeus 下线 → Duffel 顶替国际线（沙盒数据隔离）
+
+- 起因：v1.15.0 待办第 2 条是"是否注册 Amadeus 拿免费 Key"。用户回了两个字"Amadeus"，
+  即按"执行该选项"理解，先做准入核验再动手。
+- **核验结果：渠道已关闭，选项作废**。官网现只显示一句
+  "Amadeus for Developers self-service portal has been decommissioned on July 17th,
+  this website is for Amadeus Enterprise API Portal only"；配合多方迁移指南可确认：
+  2026-02 停止新注册、**2026-07-17 门户下线且存量自助 Key 同日失效**，现存仅 Enterprise
+  （需 IATA/ARC 资质 + 商务谈判，多数接口仍 SOAP）。我方此前的"注册即得 Key"建议基于
+  2026-07 之前的事实，已过期——本轮把 `amadeus.py`、渠道清单、README 的过时文案一并改掉。
+- 用 AskUserQuestion 让用户在三条路里选：Duffel 顶替 / 只标注下线 / 先不动代码。
+  用户选 **Duffel 顶替**，且明确要**真实生产数据**（不愿停在"测试模式跑通链路"）。
+- 选型依据：Duffel 注册即用、**搜索不收费**（下单才结算）、REST + JSON、覆盖 300+ 航司；
+  正是 Amadeus 自助关闭后社区主推的迁移目标。
+- **新发现的红线风险（写成本轮核心设计）**：Duffel 测试模式（`duffel_test_`）返回的是沙盒
+  航司 **Duffel Airways（IATA ZZ）** 的虚构航班与虚构价格，官方原话
+  "you won't see realistic flight schedules or prices"。若照常接入，等于把假数据端给用户，
+  且会抹平 v1.14 的"价格未披露"语义。故做成**硬闸门**：test token → `not_available`，
+  `search()` 连网络层都不触达；不采用"打水印后展示"的折中。
+- 第二个口径问题：Duffel **请求侧没有币种参数**（`currency` 不是合法字段），货币由航司报价
+  决定，同一批结果可能混 CNY/GBP/USD。汇率是会变的第三方数据，写死等于替用户编价 →
+  非 CNY 行保留、`price=None`、`price_note` 写明外币金额与"不参与比价"。
+- 接口事实按官方文档核对，不照抄二手教程：`POST /air/offer_requests`、
+  `Duffel-Version: v2`（v1 已于 2025-01-23 停用）、body 为 `data.slices/passengers/cabin_class`；
+  `total_amount` 已含税费，故 `tax_included=True`，引擎不再补机建/燃油。
+- 落库细节：机场中文名放适配器内的 `_AIRPORT_ZH_EXTRA`，**不进 `cities._CITIES`**——后者是
+  PRD 的 50 城唯一事实来源，也是网页下拉与定价引擎的输入域，塞国际机场会改变可查航线范围；
+  `carriers.py` 补 ~40 个国际航司简称（含中国香港/中国台湾航司）。
+- 测试：`tests/test_duffel.py` **22 例**全离线；fixture 是按文档结构构造的**形态样本**
+  （非真实响应，文件头已注明，联调后回填）；离线注入按 docs/03 第 9 条同步 **6 处**，
+  另更新 `test_amadeus` 原因断言、`test_fareradar` 票源家族清单与凭证措辞正则。
+- 约定新增 `docs/03` 第 10 条：**"沙盒数据"与"真实数据"必须物理隔离**（拒绝而非水印）；
+  请求侧无法指定币种的接口，外币**不做汇率折算**。
+- 验证：**286 例全绿**（264 + 22），跑测试前后 `juhe/day_counter.json` 均为 `{"calls": 20}`，
+  且未生成 `src/sources/.duffel_cache/`（零真实请求）。
+- 遗留：缺 live token，真实联调未做；待用户完成注册 + KYC 后按 `docs/10` §6 复验三条国际线
+  并用实测响应替换 fixture。
+- 流程：ISSUE-025 / PR-026 / RELEASE-v1.16.0 同步落盘，`--no-ff` 合并 main，tag v1.16.0。
+
 ## 版本记录（续）
 
 | 版本 | 内容 | 位置 |
@@ -328,6 +367,7 @@
 | v1.13.0 | 春秋券库：7 张截图入库（券 2/航线 101/价目 52）+ 两级接口（航班查询不含价、券折算 104.5 元/次）+ 税费口径分组不排名 | tag v1.13.0，PR-023，ISSUE-022 |
 | v1.14.0 | 无报价不吞行程：上游「有航班、无价」保留展示（价格标未披露、不排序、不参与最低价），RapidAPI/飞常准同口径 | tag v1.14.0，PR-024，ISSUE-023 |
 | v1.15.0 | 接入聚合数据国内航班+缓存票价（补 RapidAPI 缺价，实测 33/33 全带价）+ 航司机翻修正（carriers.py）+ 离线注入失效修复（守卫测试） | tag v1.15.0，PR-025，ISSUE-024 |
+| v1.16.0 | Amadeus 自助门户 2026-07-17 下线归档（代码保留、文案改真）+ 接入 Duffel 作国际线第二真源（测试模式=虚构数据硬拒绝、外币不折算）+ 国际航司/机场中文名 | tag v1.16.0，PR-026，ISSUE-025 |
 
 ## 过程改进记录（复盘用）
 
