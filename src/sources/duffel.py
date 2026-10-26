@@ -50,9 +50,12 @@ DAILY_CALL_CAP = 200          # 当日自我上限（搜索不收费，仅防失
 OFFER_CACHE_TTL = 15 * 60
 EMPTY_CACHE_TTL = 30 * 60
 
-_NOTE_NO_KEY = ("未配置访问令牌——在 https://duffel.com 免费注册（搜索不收费）后，"
-                "于 Dashboard → Developers → Access tokens 创建 **Live** token，"
-                "填入 src/sources/duffel_config.json（已 gitignore，不入库）")
+_NOTE_NO_KEY = ("未配置访问令牌——且 live token 需先过 Stripe 实名入驻（KYC）："
+                "Duffel 开给本账号的 Stripe 账户国家锁定为**美国**，要求美国住址+州+邮编、"
+                "+1 电话与 SSN 后四位，中国大陆个人无法合法满足（Stripe 支持的国家/地区"
+                "不含内地）；测试 token 为沙盒价，本工具亦不接入。"
+                "如另有美国/香港/新加坡主体，激活后将 live token 填入 "
+                "src/sources/duffel_config.json（已 gitignore）")
 
 _NOTE_TEST_TOKEN = ("检测到 Duffel **测试模式** token（duffel_test_）：该模式的报价以沙盒航司"
                     " Duffel Airways（IATA ZZ）的虚构数据为主，也会混入真实航司（CA/MU/BA…）"
@@ -113,9 +116,11 @@ class DuffelSource(Source):
     source_id = "duffel"
     display_name = "Duffel 真实接口"
     tagline = ("国际线真实报价（300+ 航司，NDC/GDS/LCC）；含税总价，"
-               "非人民币报价不做折算、不参与比价；需 live token（测试模式为虚构数据，不接入）")
+               "非人民币报价不做折算、不参与比价。注意：live token 需过 Stripe KYC，"
+               "其账户国家锁定美国，大陆个人无法满足，故本渠道实际不可启用")
     entry_url = "https://duffel.com"
-    entry_note = "Duffel 开发者平台（注册后用 live token 启用本渠道，测试模式不接入）"
+    entry_note = ("Duffel 开发者平台（live token 需先过 Stripe KYC；实测该账户国家锁定"
+                  "美国、要求 SSN 后四位，中国大陆个人不可用）")
 
     def __init__(self, config_path=None):
         self._config_path = (Path(config_path) if config_path
