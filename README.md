@@ -120,15 +120,30 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 - 价格为分钟级演示波动，同一分钟内一致；不是实时行情，也不预测未来价格。
 - 同城多机场（如虹桥/浦东）按注册表唯一机场演示；暂不支持往返、多航段、舱位/时段筛选与 `--json` 机读输出。
 
-## 接入 Amadeus 真实接口（可选，默认关闭）
+## 接入国际线真实接口：Duffel（可选，默认关闭）
 
-工具内置一个**真实 API 票源**（Amadeus Self-Service，国际 GDS 开发者平台）。默认关闭——未配置 Key 时渠道显示"未配置 API Key"，不假装接入。启用三步：
+> **Amadeus 已不可用（v1.16.0 起）**：Amadeus Self-Service 于 2026-02 停止新注册、
+> **2026-07-17 整体下线**（存量自助 Key 同日失效），现存仅 Enterprise 合同制（需
+> IATA/ARC 资质 + 商务谈判），个人开发者已无自助接入路径。`src/sources/amadeus.py`
+> 代码保留备查，渠道恒为 `not_available`；国际线第二真源改为 Duffel。
 
-1. 注册：https://developers.amadeus.com （免费），创建应用拿到 API Key（client_id / client_secret）。
-2. 配置：复制 `src/sources/amadeus_config.example.json` 为 `src/sources/amadeus_config.json`，填入 Key；若走代理，填 `proxy`（如 `http://127.0.0.1:7897`），并确保代理放行 `*.amadeus.com`。
-3. 重启 `python src/webapp.py`，渠道"Amadeus 真实接口"即变为可用，查询结果带"真实接口"标注。
+Duffel 注册即用、**搜索不收费**（下单才结算）、REST + JSON、覆盖 300+ 航司（NDC/GDS/LCC）。启用三步：
 
-内置调用纪律（自动生效）：Token 缓存复用、同航线同日期结果缓存 30 分钟、**当日最多 200 次调用**（达到自动停用当日渠道）、超时 10 秒、遇 429 立即停不重试。注意：Amadeus 对**中国国内航线覆盖有限**，返回为空时如实显示无报价；测试环境数据可能为缓存，购买以官方渠道为准。
+1. 注册 https://duffel.com → 完成账号激活（邮箱验证 + KYC）→ Dashboard → Developers → Access tokens 创建 **Live** token（前缀 `duffel_live_`）。
+2. 写入 `src/sources/duffel_config.json`：`{"access_token": "duffel_live_...", "proxy": ""}`。
+3. 重启 `python src/webapp.py`，渠道「Duffel 真实接口」即变为 `active`。
+
+**测试模式 token（`duffel_test_`）一律拒绝**：该模式返回的是沙盒航司 Duffel Airways
+（IATA `ZZ`）的**虚构航班与虚构价格**（官方原话 "you won't see realistic flight schedules
+or prices"），与本工具「零编造」红线直接冲突，故不接入、**也不发起任何请求**。
+
+**货币口径**：Duffel 请求侧不提供币种参数，货币由航司报价决定。**非人民币报价不做汇率
+折算**（折算等于替用户编价）——该行照常展示航班与外币金额，金额位标「未披露」，
+且不参与排序与最低价竞争。
+
+**调用纪律**（自动生效）：同航线同日期缓存 15 分钟（Duffel 报价本身约 20 分钟失效）、
+空结果 30 分钟、当日 200 次自我上限（搜索不收费，仅防失控）、超时 25 秒。
+接口事实与坑见 `docs/10-duffel-integration.md`。
 
 ## 接入聚合数据「航班机票查询」（可选，按次计费，默认关闭）
 
@@ -146,7 +161,7 @@ python src/fareradar.py watch            # 立即检查全部收藏航线
 **价格口径**：`ticketPrice` 是否含机建燃油上游未明示，按票面价处理（`tax_included=false`），
 到手价由引擎补"机建 ¥50 + 燃油"并逐行标注——不把它当成含税价，避免低估。
 
-## 作为 MCP Server 使用（v1.15.0，AI 客户端可直连）
+## 作为 MCP Server 使用（v1.16.0，AI 客户端可直连）
 
 本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` / `spring_flights` / `spring_coupon_quote` 六个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
 

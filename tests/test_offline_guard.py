@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import sources.amadeus as _amadeus  # noqa: E402
+import sources.duffel as _duffel  # noqa: E402
 import sources.juhe as _juhe  # noqa: E402
 import sources.rapidapi_sky as _rapidapi  # noqa: E402
 import sources.travelpayouts as _travelpayouts  # noqa: E402
@@ -33,6 +34,7 @@ NETWORK_MODULES = {
     "variflight": _variflight,
     "travelpayouts": _travelpayouts,
     "juhe": _juhe,
+    "duffel": _duffel,
 }
 
 for _module in NETWORK_MODULES.values():
@@ -50,7 +52,8 @@ class OfflineInjectionTest(unittest.TestCase):
     def test_no_network_source_is_active_in_tests(self):
         from sources import all_sources
         active = [s.source_id for s in all_sources()
-                  if s.source_id in {"rapidapi_sky", "variflight", "juhe_flight", "amadeus"}
+                  if s.source_id in {"rapidapi_sky", "variflight", "juhe_flight",
+                                     "amadeus", "duffel"}
                   and s.status == "active"]
         self.assertEqual(active, [], "测试进程中不得有可发请求的联网源")
 
@@ -59,7 +62,7 @@ class OfflineInjectionTest(unittest.TestCase):
         from sources import all_sources
         registered = {s.source_id for s in all_sources()}
         known = {"snapshot_pack", "rapidapi_sky", "variflight", "juhe_flight",
-                 "travelpayouts", "amadeus", "airline", "ota",
+                 "travelpayouts", "amadeus", "duffel", "airline", "ota",
                  "douyin_groupbuy", "douyin_miniapp", "douyin_live"}
         unknown = registered - known
         self.assertEqual(unknown, set(),

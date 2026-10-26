@@ -87,7 +87,8 @@ class AmadeusSourceTest(unittest.TestCase):
         self.assertEqual(source.status, "not_available")
         available, reason = source.availability("INC", "CAN", DATE)
         self.assertFalse(available)
-        self.assertIn("未配置 API Key", reason)
+        self.assertIn("无自助接入路径", reason)
+        self.assertIn("2026-07-17", reason)   # v1.16：自助平台已下线，原因须说清
         self.assertEqual(source.search("INC", "CAN", DATE), [])
 
     def test_key_active_and_mapping(self):

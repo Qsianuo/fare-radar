@@ -11,3 +11,5 @@ src/sources/travelpayouts_config.json
 src/sources/.travelpayouts_cache/
 src/sources/juhe_config.json
 src/sources/.juhe_cache/
+src/sources/duffel_config.json
+src/sources/.duffel_cache/

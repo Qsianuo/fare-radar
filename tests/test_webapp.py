@@ -26,8 +26,9 @@ import sources.amadeus as _am, sources.rapidapi_sky as _rp  # noqa: E402
 import sources.variflight as _vf  # noqa: E402
 import sources.travelpayouts as _tp  # noqa: E402
 import sources.juhe as _ju  # noqa: E402
+import sources.duffel as _df  # noqa: E402
 _am.CONFIG_NAME = _rp.CONFIG_NAME = _vf.CONFIG_NAME = "_test_offline_absent.json"
-_tp.CONFIG_NAME = _ju.CONFIG_NAME = "_test_offline_absent.json"
+_tp.CONFIG_NAME = _ju.CONFIG_NAME = _df.CONFIG_NAME = "_test_offline_absent.json"
 import webapp  # noqa: E402
 from sources import all_sources, cities, pricing  # noqa: E402
 

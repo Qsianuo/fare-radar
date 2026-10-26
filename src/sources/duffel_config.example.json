@@ -1,0 +1,5 @@
+{
+  "_说明": "复制本文件为 duffel_config.json 并填入 live token（该文件已被 gitignore，不会提交）。注册 https://duffel.com（免费，搜索不收费；下单才结算）。拿 token：Dashboard → Developers → Access tokens → 创建 Live token（前缀 duffel_live_，需先完成账号激活/KYC）。注意：测试模式 token（duffel_test_）返回的是沙盒航司 Duffel Airways 的虚构航班与虚构价格，本工具拒绝接入、不会发请求。proxy 填本机代理（如 http://127.0.0.1:7897），留空则直连。",
+  "access_token": "",
+  "proxy": ""
+}

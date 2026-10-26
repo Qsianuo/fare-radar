@@ -120,7 +120,7 @@ CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源�
 
 ## 9. 网络票源适配器通用约定（v1.10.2，ISSUE-017/018 定案）
 
-新增或改动任何**联网票源适配器**时，以下五条为强制约定，缺一条即视为不完整实现：
+新增或改动任何**联网票源适配器**时，以下十条为强制约定，缺一条即视为不完整实现：
 
 1. **必须校验响应体 `status`，不能只看 HTTP 状态码**。上游常以 HTTP 200 + body `status` 表达业务状态；
    只看 HTTP 会把配额/限速错误静默当成"无数据"（ISSUE-017 实测：`status: 204` = provider 无数据）。
@@ -154,5 +154,15 @@ CLI 参数 → 中文校验（三字码/日期/票价） → collect()：逐源�
    验收动作：跑测试**前后**比对 `src/sources/<源>/.xxx_cache/day_counter.json`，
    数值必须完全一致。按次计费的源（聚合数据、飞常准）一次误联网就是真扣钱。
 
+10. **"沙盒数据"与"真实数据"必须物理隔离**（v1.16，ISSUE-025）：部分平台提供测试模式
+   （Duffel 的 `duffel_test_` 会返回沙盒航司 **Duffel Airways（IATA ZZ）** 的虚构航班与
+   虚构价格，官方明说"you won't see realistic flight schedules or prices"）。这类 token
+   **一律 `not_available` 且不发起任何请求**——不是"打个水印后展示"，而是直接拒绝：一旦
+   允许出现，用户无法分辨哪行是真的，v1.14 建立的"价格未披露"语义也随之失效。判定写在
+   `status`/`availability()` 里，不要放在渲染层靠人看提示。同理，**请求侧无法指定币种**的
+   接口（Duffel）返回外币时**不做汇率折算**：折算等于替用户编一个价，应保留行、价格位留空、
+   由 `price_note` 说明外币金额。
+
 实现参考：`sources/rapidapi_sky.py` 的 `_fetch`（status 校验）、`EMPTY_CACHE_TTL`、
-`empty_note`；引擎侧 `fareradar.empty_notes()` 为三入口共用的原因词表来源。
+`empty_note`；`sources/duffel.py` 的 `mode`/`status`（沙盒隔离）与 `_to_offer`（外币不折算）；
+引擎侧 `fareradar.empty_notes()` 为三入口共用的原因词表来源。

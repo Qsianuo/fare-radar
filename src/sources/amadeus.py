@@ -1,9 +1,15 @@
 """Amadeus Self-Service 真实接口适配器（ISSUE-013，默认关闭）。
 
-接入条件：在 https://developers.amadeus.com 自行注册开发者账号，复制
-amadeus_config.example.json 为 amadeus_config.json 并填入 Key；可选填
-proxy（如 http://127.0.0.1:7897）——本机代理为规则模式时需确保
-*.amadeus.com 走代理。未配置 Key 时渠道状态为 not_available，不出数据行，
+**状态更新（v1.16.0，ISSUE-025）：本渠道已无自助接入路径。** Amadeus 于 2026-02
+暂停自助平台新注册，2026-07-17 整体下线（官网现只保留 Enterprise API Portal 一句
+"self-service portal has been decommissioned on July 17th"），已发出的自助 Key 同日
+失效；现存路径为 Enterprise 合同制，需 IATA/ARC 资质 + 商务谈判。本文件代码保留
+备查（万一将来走企业版可复用 OAuth2 与映射），渠道恒为 not_available，
+国际线的实际第二真源改为 `duffel.py`。
+
+以下为原始接入说明（历史留存）：在 https://developers.amadeus.com 自行注册开发者
+账号，复制 amadeus_config.example.json 为 amadeus_config.json 并填入 Key；可选填
+proxy（如 http://127.0.0.1:7897）。未配置 Key 时渠道状态为 not_available，不出数据行，
 不假装接入（ISSUE-012 成功标准 ④）。
 
 调用纪律（本文件内置，使用者无需操心）：
@@ -33,8 +39,9 @@ TOKEN_SKEW = 120              # Token 提前 2 分钟视为过期
 TIMEOUT = 10                  # 单次请求超时（秒）
 HOSTS = {"test": "test.api.amadeus.com", "prod": "api.amadeus.com"}
 
-_NO_KEY_REASON = ("未配置 API Key——请在 developers.amadeus.com 自行注册（免费），"
-                  "复制 src/sources/amadeus_config.example.json 为 amadeus_config.json 并填入")
+_NO_KEY_REASON = ("未配置 API Key，且本渠道已无自助接入路径——Amadeus 自助平台已于 "
+                  "2026-07-17 下线（新注册自 2026-02 起停止，存量自助 Key 同日失效），"
+                  "现存仅 Enterprise 合同制（需 IATA/ARC 资质）。国际线请用 Duffel 渠道")
 
 
 class AmadeusSource(Source):
@@ -42,10 +49,10 @@ class AmadeusSource(Source):
 
     source_id = "amadeus"
     display_name = "Amadeus 真实接口"
-    tagline = ("国际 GDS 开发者 API（Self-Service），真实报价；"
-               "对中国国内航线覆盖有限，以实际返回为准；未配置 Key 时不接入")
+    tagline = ("国际 GDS 开发者 API（Self-Service）——**该自助平台已于 2026-07-17 下线**，"
+               "个人已无法注册；现存仅 Enterprise 合同制，本渠道不再产出数据")
     entry_url = "https://developers.amadeus.com"
-    entry_note = "Amadeus 开发者平台（注册后自配 Key 启用本渠道）"
+    entry_note = "自助门户已下线（仅 Enterprise 合同制）；国际线请用 Duffel 渠道"
 
     def __init__(self, config_path=None):
         self._config_path = (Path(config_path) if config_path
