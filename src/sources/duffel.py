@@ -54,10 +54,16 @@ _NOTE_NO_KEY = ("未配置访问令牌——在 https://duffel.com 免费注册�
                 "于 Dashboard → Developers → Access tokens 创建 **Live** token，"
                 "填入 src/sources/duffel_config.json（已 gitignore，不入库）")
 
-_NOTE_TEST_TOKEN = ("检测到 Duffel **测试模式** token（duffel_test_）：该模式的报价来自"
-                    "沙盒航司 Duffel Airways（IATA ZZ），航班与价格均为虚构，"
-                    "本工具不展示虚构价格，故不接入、不发起任何请求——"
-                    "请改用完成账号激活后创建的 live token（duffel_live_）")
+_NOTE_TEST_TOKEN = ("检测到 Duffel **测试模式** token（duffel_test_）：该模式的报价以沙盒航司"
+                    " Duffel Airways（IATA ZZ）的虚构数据为主，也会混入真实航司（CA/MU/BA…）"
+                    "但价格同样是沙盒值、不可订；本工具不展示虚构价格，故不接入、"
+                    "不发起任何请求——请改用账号激活后创建的 live token（duffel_live_）")
+
+# 第二道闸门（v1.16.1）：token 前缀闸门只能拦住 duffel_test_ 开头的凭据。
+# 若上游改了前缀规则、或账号在 live 模式下被降级，响应顶层的 live_mode=false
+# 仍能识破——这是实测响应里确实存在的字段（2026-10-26 三条航线均为 false）。
+_NOTE_UPSTREAM_TEST = ("Duffel 响应标记 live_mode=false（测试环境数据）：即便 token 形如 live，"
+                       "本渠道也只采用 live 报价，故不展示——请确认账号已通过激活审核")
 
 _NOTE_UNKNOWN_TOKEN = ("访问令牌格式无法识别：Duffel token 必须以 duffel_live_（真实）"
                        "或 duffel_test_（虚构沙盒，本工具不使用）开头")
@@ -376,6 +382,25 @@ class DuffelSource(Source):
         offers = (data or {}).get("offers") if isinstance(data, dict) else None
         offers = offers if isinstance(offers, list) else []
 
+        # 第二道闸门：上游自报 live_mode=false（测试环境数据）一律不采用。
+        if isinstance(data, dict) and data.get("live_mode") is False:
+            self._cache_write(key, {"expire_at": time.time() + EMPTY_CACHE_TTL,
+                                    "rows": [], "raw_offers": len(offers),
+                                    "upstream_live_mode": False})
+            return []
+
+        # 上游返回顺序不保证按价格升序（实测 PVG→LHR 82 条近似升序，但不可依赖）。
+        # 人民币优先、同币种按总价升序后再截取，避免把便宜的行截掉。
+        def _sort_key(item):
+            cur = str(item.get("total_currency") or "").strip().upper()
+            try:
+                amount = float(item.get("total_amount"))
+            except (TypeError, ValueError):
+                amount = float("inf")
+            return (0 if cur == "CNY" else 1, amount)
+
+        offers = sorted([o for o in offers if isinstance(o, dict)], key=_sort_key)
+
         rows, foreign = [], []
         for item in offers[:12]:
             if not isinstance(item, dict):
@@ -399,6 +424,8 @@ class DuffelSource(Source):
         cached = self._cache_read(f"offers_{origin}_{destination}_{date.isoformat()}.json")
         if not cached or cached.get("rows"):
             return None
+        if cached.get("upstream_live_mode") is False:
+            return _NOTE_UPSTREAM_TEST
         raw = cached.get("raw_offers")
         if isinstance(raw, int) and raw > 0:
             return (f"Duffel 返回 {raw} 条报价但均缺少航段或起降时刻，无法成行展示")

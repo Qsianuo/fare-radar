@@ -1,5 +1,5 @@
 {
-  "_说明": "按 Duffel 官方文档「Create an offer request」的响应结构构造的**形态样本**，不是真实响应——截至 v1.16.0 尚未拿到 live token，无法实测回填。字段名/层级完全照文档：data.offers[].{total_amount,total_currency,owner,slices[].{duration,segments[]}}，机场与航班号取真实存在的组合仅为便于阅读。真实字段若有出入，以联调实测为准并更新本文件。",
+  "_说明": "Duffel POST /air/offer_requests 响应样本。**字段形态取自 2026-10-26 实测**（PVG→LHR / PVG→PEK / CAN→CTU 三条航线，test 模式响应），航线、航班号与价格是人工构造的示意值，不是任何真实报价。实测确认的形态要点：① departing_at/arriving_at 不带时区后缀，为机场当地时间；② marketing_carrier_flight_number 是整数；③ aircraft 可能为 null；④ stops 是空数组（不是中转次数）；⑤ total_amount 已含税（实测 base 297.05 + tax 53.47 = total 350.52）；⑥ 顶层与每个 offer 都有 live_mode 布尔字段。",
   "data": {
     "id": "orq_0000A7XyZsampleOnly",
     "live_mode": true,
@@ -11,25 +11,73 @@
         "total_currency": "CNY",
         "base_amount": "3980.00",
         "tax_amount": "341.00",
-        "owner": {"name": "China Eastern Airlines", "iata_code": "MU", "id": "arl_00009VME7DBKeMogkE7BUW"},
+        "owner": {
+          "name": "China Eastern Airlines",
+          "iata_code": "MU",
+          "id": "arl_00009VME7DBKeMogkE7BUW"
+        },
         "expires_at": "2026-10-26T15:40:00.000Z",
         "slices": [
           {
             "duration": "PT12H45M",
             "segments": [
               {
-                "origin": {"iata_code": "PVG", "name": "Shanghai Pudong International Airport", "city_name": "Shanghai"},
-                "destination": {"iata_code": "LHR", "name": "London Heathrow Airport", "city_name": "London"},
-                "departing_at": "2026-11-15T13:20:00+08:00",
-                "arriving_at": "2026-11-15T18:05:00+00:00",
+                "origin": {
+                  "iata_code": "PVG",
+                  "name": "Shanghai Pudong International Airport",
+                  "city_name": "Shanghai"
+                },
+                "destination": {
+                  "iata_code": "LHR",
+                  "name": "London Heathrow Airport",
+                  "city_name": "London"
+                },
+                "departing_at": "2026-11-15T13:20:00",
+                "arriving_at": "2026-11-15T18:05:00",
                 "duration": "PT12H45M",
-                "marketing_carrier": {"name": "China Eastern Airlines", "iata_code": "MU"},
-                "marketing_carrier_flight_number": "551",
-                "operating_carrier": {"name": "China Eastern Airlines", "iata_code": "MU"},
+                "marketing_carrier": {
+                  "name": "China Eastern Airlines",
+                  "iata_code": "MU"
+                },
+                "marketing_carrier_flight_number": 551,
+                "operating_carrier": {
+                  "name": "China Eastern Airlines",
+                  "iata_code": "MU"
+                },
                 "operating_carrier_flight_number": "551",
-                "aircraft": {"name": "Boeing 777-300ER", "iata_code": "77W"}
+                "aircraft": null,
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               }
             ]
+          }
+        ],
+        "live_mode": true,
+        "partial": false,
+        "total_emissions_kg": "820",
+        "supported_loyalty_programmes": [
+          "AA",
+          "BA",
+          "CX",
+          "QF"
+        ],
+        "conditions": {
+          "change_before_departure": {
+            "allowed": false,
+            "penalty_amount": null,
+            "penalty_currency": null
+          },
+          "refund_before_departure": {
+            "allowed": true,
+            "penalty_amount": "60.00",
+            "penalty_currency": "CNY"
+          }
+        },
+        "passengers": [
+          {
+            "id": "pas_0000BBoEFqPHYFjSES1J10",
+            "type": "adult"
           }
         ]
       },
@@ -39,35 +87,100 @@
         "total_currency": "GBP",
         "base_amount": "380.00",
         "tax_amount": "132.30",
-        "owner": {"name": "British Airways", "iata_code": "BA", "id": "arl_00009VME7DBKeMogkE7BUW"},
+        "owner": {
+          "name": "British Airways",
+          "iata_code": "BA",
+          "id": "arl_00009VME7DBKeMogkE7BUW"
+        },
         "expires_at": "2026-10-26T15:40:00.000Z",
         "slices": [
           {
             "duration": "PT16H30M",
             "segments": [
               {
-                "origin": {"iata_code": "PVG", "name": "Shanghai Pudong International Airport", "city_name": "Shanghai"},
-                "destination": {"iata_code": "HKG", "name": "Hong Kong International Airport", "city_name": "Hong Kong"},
-                "departing_at": "2026-11-15T09:00:00+08:00",
-                "arriving_at": "2026-11-15T12:05:00+08:00",
+                "origin": {
+                  "iata_code": "PVG",
+                  "name": "Shanghai Pudong International Airport",
+                  "city_name": "Shanghai"
+                },
+                "destination": {
+                  "iata_code": "HKG",
+                  "name": "Hong Kong International Airport",
+                  "city_name": "Hong Kong"
+                },
+                "departing_at": "2026-11-15T09:00:00",
+                "arriving_at": "2026-11-15T12:05:00",
                 "duration": "PT3H05M",
-                "marketing_carrier": {"name": "Cathay Pacific", "iata_code": "CX"},
-                "marketing_carrier_flight_number": "365",
-                "operating_carrier": {"name": "Cathay Pacific", "iata_code": "CX"},
-                "operating_carrier_flight_number": "365"
+                "marketing_carrier": {
+                  "name": "Cathay Pacific",
+                  "iata_code": "CX"
+                },
+                "marketing_carrier_flight_number": 365,
+                "operating_carrier": {
+                  "name": "Cathay Pacific",
+                  "iata_code": "CX"
+                },
+                "operating_carrier_flight_number": "365",
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               },
               {
-                "origin": {"iata_code": "HKG", "name": "Hong Kong International Airport", "city_name": "Hong Kong"},
-                "destination": {"iata_code": "LHR", "name": "London Heathrow Airport", "city_name": "London"},
-                "departing_at": "2026-11-15T23:10:00+08:00",
-                "arriving_at": "2026-11-16T06:30:00+00:00",
+                "origin": {
+                  "iata_code": "HKG",
+                  "name": "Hong Kong International Airport",
+                  "city_name": "Hong Kong"
+                },
+                "destination": {
+                  "iata_code": "LHR",
+                  "name": "London Heathrow Airport",
+                  "city_name": "London"
+                },
+                "departing_at": "2026-11-15T23:10:00",
+                "arriving_at": "2026-11-16T06:30:00",
                 "duration": "PT13H20M",
-                "marketing_carrier": {"name": "British Airways", "iata_code": "BA"},
-                "marketing_carrier_flight_number": "28",
-                "operating_carrier": {"name": "British Airways", "iata_code": "BA"},
-                "operating_carrier_flight_number": "28"
+                "marketing_carrier": {
+                  "name": "British Airways",
+                  "iata_code": "BA"
+                },
+                "marketing_carrier_flight_number": 28,
+                "operating_carrier": {
+                  "name": "British Airways",
+                  "iata_code": "BA"
+                },
+                "operating_carrier_flight_number": "28",
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               }
             ]
+          }
+        ],
+        "live_mode": true,
+        "partial": false,
+        "total_emissions_kg": "820",
+        "supported_loyalty_programmes": [
+          "AA",
+          "BA",
+          "CX",
+          "QF"
+        ],
+        "conditions": {
+          "change_before_departure": {
+            "allowed": false,
+            "penalty_amount": null,
+            "penalty_currency": null
+          },
+          "refund_before_departure": {
+            "allowed": true,
+            "penalty_amount": "60.00",
+            "penalty_currency": "GBP"
+          }
+        },
+        "passengers": [
+          {
+            "id": "pas_0000BBoEFqPHYFjSES1J10",
+            "type": "adult"
           }
         ]
       },
@@ -75,46 +188,128 @@
         "id": "off_0000A7XyZ0003",
         "total_amount": "3980.00",
         "total_currency": "CNY",
-        "owner": {"name": "China Southern Airlines", "iata_code": "CZ", "id": "arl_00009VME7DBKeMogkE7BUW"},
+        "owner": {
+          "name": "China Southern Airlines",
+          "iata_code": "CZ",
+          "id": "arl_00009VME7DBKeMogkE7BUW"
+        },
         "expires_at": "2026-10-26T15:40:00.000Z",
         "slices": [
           {
             "duration": "PT22H10M",
             "segments": [
               {
-                "origin": {"iata_code": "PVG", "name": "Shanghai Pudong International Airport", "city_name": "Shanghai"},
-                "destination": {"iata_code": "CAN", "name": "Guangzhou Baiyun International Airport", "city_name": "Guangzhou"},
-                "departing_at": "2026-11-15T20:00:00+08:00",
-                "arriving_at": "2026-11-15T22:35:00+08:00",
+                "origin": {
+                  "iata_code": "PVG",
+                  "name": "Shanghai Pudong International Airport",
+                  "city_name": "Shanghai"
+                },
+                "destination": {
+                  "iata_code": "CAN",
+                  "name": "Guangzhou Baiyun International Airport",
+                  "city_name": "Guangzhou"
+                },
+                "departing_at": "2026-11-15T20:00:00",
+                "arriving_at": "2026-11-15T22:35:00",
                 "duration": "PT2H35M",
-                "marketing_carrier": {"name": "China Southern Airlines", "iata_code": "CZ"},
-                "marketing_carrier_flight_number": "3548",
-                "operating_carrier": {"name": "China Southern Airlines", "iata_code": "CZ"},
-                "operating_carrier_flight_number": "3548"
+                "marketing_carrier": {
+                  "name": "China Southern Airlines",
+                  "iata_code": "CZ"
+                },
+                "marketing_carrier_flight_number": 3548,
+                "operating_carrier": {
+                  "name": "China Southern Airlines",
+                  "iata_code": "CZ"
+                },
+                "operating_carrier_flight_number": "3548",
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               },
               {
-                "origin": {"iata_code": "CAN", "name": "Guangzhou Baiyun International Airport", "city_name": "Guangzhou"},
-                "destination": {"iata_code": "AMS", "name": "Amsterdam Airport Schiphol", "city_name": "Amsterdam"},
-                "departing_at": "2026-11-16T00:05:00+08:00",
-                "arriving_at": "2026-11-16T06:20:00+01:00",
+                "origin": {
+                  "iata_code": "CAN",
+                  "name": "Guangzhou Baiyun International Airport",
+                  "city_name": "Guangzhou"
+                },
+                "destination": {
+                  "iata_code": "AMS",
+                  "name": "Amsterdam Airport Schiphol",
+                  "city_name": "Amsterdam"
+                },
+                "departing_at": "2026-11-16T00:05:00",
+                "arriving_at": "2026-11-16T06:20:00",
                 "duration": "PT12H15M",
-                "marketing_carrier": {"name": "China Southern Airlines", "iata_code": "CZ"},
-                "marketing_carrier_flight_number": "307",
-                "operating_carrier": {"name": "China Southern Airlines", "iata_code": "CZ"},
-                "operating_carrier_flight_number": "307"
+                "marketing_carrier": {
+                  "name": "China Southern Airlines",
+                  "iata_code": "CZ"
+                },
+                "marketing_carrier_flight_number": 307,
+                "operating_carrier": {
+                  "name": "China Southern Airlines",
+                  "iata_code": "CZ"
+                },
+                "operating_carrier_flight_number": "307",
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               },
               {
-                "origin": {"iata_code": "AMS", "name": "Amsterdam Airport Schiphol", "city_name": "Amsterdam"},
-                "destination": {"iata_code": "LHR", "name": "London Heathrow Airport", "city_name": "London"},
-                "departing_at": "2026-11-16T08:40:00+01:00",
-                "arriving_at": "2026-11-16T09:10:00+00:00",
+                "origin": {
+                  "iata_code": "AMS",
+                  "name": "Amsterdam Airport Schiphol",
+                  "city_name": "Amsterdam"
+                },
+                "destination": {
+                  "iata_code": "LHR",
+                  "name": "London Heathrow Airport",
+                  "city_name": "London"
+                },
+                "departing_at": "2026-11-16T08:40:00",
+                "arriving_at": "2026-11-16T09:10:00",
                 "duration": "PT1H30M",
-                "marketing_carrier": {"name": "KLM", "iata_code": "KL"},
-                "marketing_carrier_flight_number": "1009",
-                "operating_carrier": {"name": "KLM", "iata_code": "KL"},
-                "operating_carrier_flight_number": "1009"
+                "marketing_carrier": {
+                  "name": "KLM",
+                  "iata_code": "KL"
+                },
+                "marketing_carrier_flight_number": 1009,
+                "operating_carrier": {
+                  "name": "KLM",
+                  "iata_code": "KL"
+                },
+                "operating_carrier_flight_number": "1009",
+                "stops": [],
+                "origin_terminal": null,
+                "destination_terminal": null
               }
             ]
+          }
+        ],
+        "live_mode": true,
+        "partial": false,
+        "total_emissions_kg": "820",
+        "supported_loyalty_programmes": [
+          "AA",
+          "BA",
+          "CX",
+          "QF"
+        ],
+        "conditions": {
+          "change_before_departure": {
+            "allowed": false,
+            "penalty_amount": null,
+            "penalty_currency": null
+          },
+          "refund_before_departure": {
+            "allowed": true,
+            "penalty_amount": "60.00",
+            "penalty_currency": "CNY"
+          }
+        },
+        "passengers": [
+          {
+            "id": "pas_0000BBoEFqPHYFjSES1J10",
+            "type": "adult"
           }
         ]
       },
@@ -122,8 +317,39 @@
         "id": "off_0000A7XyZ0004",
         "total_amount": "1999.00",
         "total_currency": "CNY",
-        "owner": {"name": "Unknown Carrier", "iata_code": "ZZ", "id": "arl_zz"},
-        "slices": []
+        "owner": {
+          "name": "Unknown Carrier",
+          "iata_code": "ZZ",
+          "id": "arl_zz"
+        },
+        "slices": [],
+        "live_mode": true,
+        "partial": false,
+        "total_emissions_kg": "820",
+        "supported_loyalty_programmes": [
+          "AA",
+          "BA",
+          "CX",
+          "QF"
+        ],
+        "conditions": {
+          "change_before_departure": {
+            "allowed": false,
+            "penalty_amount": null,
+            "penalty_currency": null
+          },
+          "refund_before_departure": {
+            "allowed": true,
+            "penalty_amount": "60.00",
+            "penalty_currency": "CNY"
+          }
+        },
+        "passengers": [
+          {
+            "id": "pas_0000BBoEFqPHYFjSES1J10",
+            "type": "adult"
+          }
+        ]
       }
     ]
   }

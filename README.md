@@ -161,7 +161,7 @@ or prices"），与本工具「零编造」红线直接冲突，故不接入、*
 **价格口径**：`ticketPrice` 是否含机建燃油上游未明示，按票面价处理（`tax_included=false`），
 到手价由引擎补"机建 ¥50 + 燃油"并逐行标注——不把它当成含税价，避免低估。
 
-## 作为 MCP Server 使用（v1.16.0，AI 客户端可直连）
+## 作为 MCP Server 使用（v1.16.1，AI 客户端可直连）
 
 本产品同时是一个 **MCP Server**（纯标准库实现，stdio 传输，零依赖）：把 `search_flights` / `list_deals` / `list_sources` / `favorites` / `spring_flights` / `spring_coupon_quote` 六个工具注册给 MCP 客户端（ZCode、Claude Desktop 等），AI 可直接调用比价。数据与网页/CLI 完全同源。
 
