@@ -18,7 +18,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from sources import all_sources, cities, fees, snapshot_pack, source_by_id
+from sources import all_sources, cities, fees, snapshot_pack, source_by_id, spring_store
 
 try:  # Windows 控制台默认 GBK，强制 UTF-8 防中文乱码（交接坑提示 1）
     for _stream in (sys.stdout, sys.stderr):
@@ -607,6 +607,77 @@ def cmd_deals(args):
     return 0
 
 
+def cmd_spring(args):
+    """春秋券库两级查询（v1.13，ISSUE-022）：先查可兑性（不含价），再折算单价。
+
+    输出顺序刻意与 tool 契约一致：第①段绝不出现金额，第②段才给折算单价，
+    避免"票面价"与"券折算价"混在一张表里被误读。
+    """
+    date = parse_date(args.date) if args.date else None
+    date_text = date.isoformat() if date else "未指定日期"
+    flights = spring_store.available_flights(args.from_code, args.to_code, date_text
+                                            if date else None)
+    if not flights.get("ok"):
+        raise UsageError(flights.get("error", "查询失败"))
+    quote = spring_store.coupon_quote(args.from_code, args.to_code,
+                                      date.isoformat() if date else None)
+    if not quote.get("ok"):
+        raise UsageError(quote.get("error", "折算失败"))
+
+    cover = flights["coverage"]
+    query = flights["query"]
+    print(f"[春秋券库] 数据来源：{cover['source_kind']}（{cover['captured_at']}）｜"
+          f"批次 {cover['batch_id']}")
+    print(f"航线：{query['dep_city']} → {query['arr_city']} ｜ {date_text}"
+          f" ｜ 承运人：春秋航空(9C)")
+
+    print(f"\n—— ① 可用航班/商品（{len(flights['flights'])} 条｜不含价格）——")
+    if flights["flights"]:
+        for index, item in enumerate(flights["flights"], 1):
+            print(f"{index}. {item['product']}｜{item['sale_status_text']}"
+                  f"｜日期：{item['date'] or '不限（券未绑定日期）'}"
+                  f"｜航班号/时刻：{disclose(None, '未披露（以下单页为准）')}")
+    else:
+        print(flights.get("miss_hint") or "无可用商品。")
+    print("※ 本段按设计不输出任何价格：价格只能由券规则折算（见第②段）。")
+
+    print(f"\n—— ② 券匹配与折算单价（{len(quote['quotes'])} 个）——")
+    if not quote["quotes"]:
+        print(quote.get("miss_hint") or "无匹配券。")
+        return 0
+    for index, item in enumerate(quote["quotes"], 1):
+        unit = item.get("unit_price_cny")
+        unit_text = f"¥{item['unit_price_cny']:.2f}".rstrip("0").rstrip(".") \
+            if unit is not None else "暂不可给"
+        print(f"{index}. {item['coupon_name']}｜折算 {unit_text}/人次/单程"
+              f"｜口径：{item['price_basis']}")
+        print(f"   {item['formula']}")
+        if item.get("candidate_dates"):
+            for cand in item["candidate_dates"]:
+                print(f"   可售 {cand['date']}：¥{cand['price_cny']:g}（{cand['price_basis']}）")
+        if item.get("validity"):
+            print(f"   有效期：{item['validity']}")
+        for warning in item.get("warnings") or []:
+            print(f"   ⚠ {warning}")
+    best = quote.get("best_unit_price_cny")
+    groups = quote.get("basis_groups") or []
+    print("")
+    if groups:
+        print("—— ③ 按税费口径分组（口径不同不合并排名）——")
+        for group in groups:
+            print(f"· {group['basis']}：最低 ¥{group['lowest_unit_cny']:g}"
+                  f"（{group['lowest_coupon_name']}，共 {group['count']} 个）")
+    if best is not None:
+        print(f"\n结论：券 {quote['best_coupon_id']} 折算价最低，¥{best:g}/人次/单程"
+              f"（{quote['best_reason']}）。")
+    else:
+        print(f"\n结论：不自动排名——{quote.get('best_reason')}。")
+        if quote.get("cross_basis_note"):
+            print(quote["cross_basis_note"])
+    print(quote["notice"])
+    return 0
+
+
 def _watch_set(args, alerts):
     if not (args.from_code and args.to_code):
         raise UsageError(f"设置底价需同时提供 --from --to --price，{WATCH_USAGE}")
@@ -734,6 +805,13 @@ def build_parser():
     p_deals.add_argument("--from", dest="from_code", help="按出发三字码过滤（可选）")
     p_deals.add_argument("--to", dest="to_code", help="按到达三字码过滤（可选）")
     p_deals.set_defaults(func=cmd_deals)
+
+    p_spring = sub.add_parser(
+        "spring", help="春秋券库：先查可用航班（不含价），再按券规则折算单价")
+    p_spring.add_argument("--from", dest="from_code", help="出发城市（三字码或中文名）")
+    p_spring.add_argument("--to", dest="to_code", help="到达城市（三字码或中文名）")
+    p_spring.add_argument("--date", help="出发日期 YYYY-MM-DD（可选；省钱卡专享价按日期定价）")
+    p_spring.set_defaults(func=cmd_spring)
 
     p_watch = sub.add_parser("watch", help="收藏航线：设置/列表/删除底价；裸 watch 立即检查全部收藏")
     p_watch.add_argument("--from", dest="from_code", help="出发三字码")

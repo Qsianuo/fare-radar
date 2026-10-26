@@ -375,6 +375,11 @@ footer p{margin:4px 0 0}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
           <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4.2L6 20V5a1 1 0 0 1 1-1z"/>
         </svg>收藏航线</button>
+      <button class="tab" data-tab="spring" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/>
+          <path d="M12 7.5v2.2M12 14.3v2.2" stroke-dasharray="1.6 2"/>
+        </svg>春秋券</button>
     </nav>
   </div>
 </header>
@@ -463,6 +468,24 @@ footer p{margin:4px 0 0}
     <div id="watch-list"></div>
   </section>
 
+  <!-- ============ 页签四：春秋券（两级：查航班不含价 → 券折算单价） ============ -->
+  <section id="tab-spring" class="panel" aria-label="春秋优惠券">
+    <div class="panel-head">
+      <h2>春秋优惠券折算</h2>
+      <p>第①步只查「这条航线这一天有没有券可用」，<strong>不返回任何价格</strong>；第②步按券规则折算单价（209 元秋季 2 次卡 = 209 ÷ 2 = 104.5 元/次）。券库来自春秋抖音小程序截图，静态快照。</p>
+    </div>
+    <form id="spring-form" class="toolbar">
+      <label class="field"><span>出发（城市名或三字码）</span>
+        <input id="spring-from" type="text" value="上海" placeholder="上海 / SHA" autocomplete="off"></label>
+      <label class="field"><span>到达（城市名或三字码）</span>
+        <input id="spring-to" type="text" value="通辽" placeholder="通辽 / TGO" autocomplete="off"></label>
+      <label class="field"><span>出发日期（选填）</span><input id="spring-date" type="date"></label>
+      <button type="submit" class="btn primary">查询并折算</button>
+    </form>
+    <div id="spring-status" aria-live="polite"></div>
+    <div id="spring-result"></div>
+  </section>
+
 </main>
 
 <footer>
@@ -548,7 +571,8 @@ const state = {
   cityMap: new Map(),
   lastSearch: null,
   dealsLoaded: false,
-  watchLoaded: false
+  watchLoaded: false,
+  springLoaded: false
 };
 const cityName = (code) => state.cityMap.get(code) || code;
 
@@ -560,6 +584,7 @@ function activateTab(name) {
     p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "deals" && !state.dealsLoaded) { state.dealsLoaded = true; loadDeals(); }
   if (name === "watch" && !state.watchLoaded) { state.watchLoaded = true; loadWatchList(); }
+  if (name === "spring" && !state.springLoaded) { state.springLoaded = true; loadSpring(); }
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
@@ -997,6 +1022,115 @@ async function loadDeals() {
   }
 }
 $("deals-form").addEventListener("submit", (e) => { e.preventDefault(); loadDeals(); });
+
+/* ---------------- 春秋券库（① 查可兑性不漏价 → ② 券折算单价） ---------------- */
+function cny(v) {
+  if (v === null || v === undefined) return "未披露";
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
+}
+function springFlightRow(item) {
+  const row = el("div", "watch-row");
+  const main = el("div");
+  main.append(el("strong", null, item.product));
+  main.append(el("div", "watch-meta",
+    item.route_text + " ｜ " + (item.date || "日期不限（券未绑定日期）") + " ｜ " + item.sale_status_text));
+  row.append(main);
+  row.append(el("span", "chip chip-na", "航班号/时刻未披露"));
+  return row;
+}
+function springQuoteCard(q) {
+  const card = el("div", "deal-card hint-card");
+  const head = el("div", "deal-head");
+  head.append(el("span", "chip chip-source", "券"));
+  head.append(el("span", "chip chip-id", q.coupon_id));
+  card.append(head);
+  card.append(el("h3", "deal-name", q.coupon_name));
+  const priceRow = el("div", "deal-price");
+  priceRow.append(el("strong", null,
+    q.unit_price_cny === null ? "暂不可给" : "¥" + cny(q.unit_price_cny)));
+  if (q.unit_price_cny !== null) priceRow.append(el("span", "chip chip-id", "/人次/单程"));
+  card.append(priceRow);
+  const dl = el("dl", "deal-facts");
+  [["折算", q.formula], ["税费口径", q.price_basis], ["有效期", q.validity], ["命中依据", q.matched_by]]
+    .forEach((kv) => {
+      if (!kv[1]) return;
+      dl.append(el("dt", null, kv[0]));
+      dl.append(el("dd", null, kv[1]));
+    });
+  card.append(dl);
+  (q.warnings || []).forEach((w) => card.append(el("span", "flag-refund", w)));
+  if ((q.candidate_dates || []).length) {
+    const dates = el("div", "watch-meta", "价目表收录日期（不外推到邻近日期）：");
+    q.candidate_dates.forEach((d) =>
+      dates.append(el("span", "chip chip-id", d.date + " ¥" + cny(d.price_cny))));
+    card.append(dates);
+  }
+  return card;
+}
+async function loadSpring() {
+  const box = $("spring-status"), out = $("spring-result");
+  const params = {
+    from: $("spring-from").value.trim(),
+    to: $("spring-to").value.trim(),
+    date: $("spring-date").value
+  };
+  box.innerHTML = ""; out.innerHTML = "";
+  out.append(dealsSkeleton());
+  let flights, quote;
+  try {
+    // 两个接口并发：前者只回答"能不能兑"，后者才给价——分离是需求要求，不是重复请求
+    [flights, quote] = await Promise.all([
+      api("/api/spring/flights", params),
+      api("/api/spring/quote", params)
+    ]);
+  } catch (err) {
+    out.innerHTML = "";
+    out.append(errorState("春秋券查询失败", err.message));
+    return;
+  }
+  out.innerHTML = "";
+  notice(box, "demo", "春秋券库（" + flights.coverage.source_kind + "·" + flights.coverage.captured_at
+    + "）：" + flights.coverage.route_count + " 条券适用航线 ｜ "
+    + flights.coverage.offer_count + " 条日期价目（" + flights.coverage.offer_date_min
+    + " ~ " + flights.coverage.offer_date_max + "）。第①步不含任何价格。");
+
+  const section1 = flights.flights.length
+    ? flights.flights.map(springFlightRow)
+    : [emptyState("该航线暂无券可用商品", flights.miss_hint || "")];
+  out.append(dealsSection("① 可用航班 / 商品（不含价格）",
+    flights.query.dep_city + " → " + flights.query.arr_city + " ｜ " + (flights.query.date || "未指定日期"),
+    section1));
+
+  const grid = el("div", "cards");
+  quote.quotes.forEach((q) => grid.append(springQuoteCard(q)));
+  out.append(dealsSection("② 券匹配与折算单价", "单价 = 元/人次/单程票面折算值",
+    quote.quotes.length ? [grid] : [emptyState("无匹配券", quote.miss_hint || "")]));
+
+  if ((quote.basis_groups || []).length) {
+    const rows = quote.basis_groups.map((g) => {
+      const row = el("div", "watch-row");
+      const main = el("div");
+      main.append(el("strong", null, "¥" + cny(g.lowest_unit_cny) + " /人次"));
+      main.append(el("div", "watch-meta",
+        g.basis + "｜该口径最低来自 " + g.lowest_coupon_name + "（同口径共 " + g.count + " 个）"));
+      row.append(main);
+      return row;
+    });
+    out.append(dealsSection("③ 按税费口径分组", "口径不同不合并排名", rows));
+  }
+
+  const footer = el("section");
+  if (quote.best_unit_price_cny !== null) {
+    notice(footer, "good", "结论：券 " + quote.best_coupon_id + " 折算最低，¥"
+      + cny(quote.best_unit_price_cny) + "/人次/单程（" + quote.best_reason + "）。");
+  } else if (quote.quotes.length) {
+    notice(footer, "warn", "不自动排名：" + (quote.best_reason || ""));
+    if (quote.cross_basis_note) notice(footer, "muted", quote.cross_basis_note);
+  }
+  notice(footer, "muted", quote.notice);
+  out.append(footer);
+}
+$("spring-form").addEventListener("submit", (e) => { e.preventDefault(); loadSpring(); });
 
 /* ---------------- 收藏航线 ---------------- */
 function watchSkeleton() {

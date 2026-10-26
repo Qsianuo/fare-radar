@@ -57,7 +57,9 @@ class ProtocolLifecycleTest(unittest.TestCase):
         resp = mcp_server.handle_message(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = {t["name"]: t for t in resp["result"]["tools"]}
-        self.assertEqual(set(tools), {"search_flights", "list_deals", "list_sources", "favorites"})
+        # v1.13 起工具面扩到 6 个：新增春秋券库两级接口（查可兑性 / 折算单价）
+        self.assertEqual(set(tools), {"search_flights", "list_deals", "list_sources", "favorites",
+                                      "spring_flights", "spring_coupon_quote"})
         for t in tools.values():
             self.assertIn("description", t)
             self.assertEqual(t["inputSchema"]["type"], "object")
@@ -129,16 +131,29 @@ class StdioIntegrationTest(unittest.TestCase):
                     json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
                     json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                                 "params": {"name": "search_flights", "arguments": SNAP_ARGS}}),
+                    # v1.13 春秋券库：航班查询不含价、折算接口才给价（子进程级验证）
+                    json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                                "params": {"name": "spring_flights",
+                                           "arguments": {"from": "SHA", "to": "通辽",
+                                                         "date": "2026-11-04"}}}),
+                    json.dumps({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                                "params": {"name": "spring_coupon_quote",
+                                           "arguments": {"from": "SHA", "to": "通辽",
+                                                         "date": "2026-11-04"}}}),
                 ]),
                 capture_output=True, text=True, encoding="utf-8", timeout=60, env=env)
             self.assertEqual(proc.returncode, 0, proc.stderr[-400:])
             lines = [json.loads(l) for l in proc.stdout.strip().splitlines() if l.strip()]
             by_id = {m["id"]: m for m in lines}
             self.assertEqual(by_id[1]["result"]["serverInfo"]["name"], "fareradar")
-            self.assertEqual(len(by_id[2]["result"]["tools"]), 4)
+            self.assertEqual(len(by_id[2]["result"]["tools"]), 6)
             call_text = by_id[3]["result"]["content"][0]["text"]
             self.assertIn("MF8753", call_text)
             self.assertIn("不能用于实际购票", call_text)
+            flights_text = by_id[4]["result"]["content"][0]["text"]
+            self.assertNotIn("¥", flights_text)          # 航班查询绝不出现金额
+            self.assertIn("不返回价格", flights_text)
+            self.assertIn("¥104.5", by_id[5]["result"]["content"][0]["text"])
 
 
 if __name__ == "__main__":

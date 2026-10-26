@@ -29,7 +29,7 @@ import fareradar as fr  # noqa: E402
 import webapp  # noqa: E402
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_INFO = {"name": "fareradar", "version": "1.8.0",
+SERVER_INFO = {"name": "fareradar", "version": "1.13.0",
                "title": "低价票雷达 FareRadar"}
 SUPPORTED_METHODS = ("initialize", "ping", "tools/list", "tools/call")
 
@@ -68,6 +68,25 @@ _TOOLS = [
     {"name": "list_sources",
      "description": "渠道清单：每个票源的接入状态（active / not_available）与原因（未配置 Key、暂无合规接口等）。",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "spring_flights",
+     "description": ("春秋航空可用航班（券库，v1.13）：查该航线/日期在春秋优惠券体系内"
+                     "是否可兑。**按设计不返回任何价格**——价格由券规则折算，"
+                     "必须再调 spring_coupon_quote 获取。返回的是「可售商品」条目"
+                     "（航线+日期+适用券），不含航班号与起降时刻（截图未披露）。"),
+     "inputSchema": {"type": "object", "required": ["from", "to"],
+                     "properties": {
+                         "from": {"type": "string", "description": "出发城市：三字码（SHA）或中文名（上海）"},
+                         "to": {"type": "string", "description": "到达城市：三字码或中文名（如 通辽 / TGO）"},
+                         "date": {"type": "string", "description": "可选：出发日期 YYYY-MM-DD；省略则返回该航线全部收录日期"}}}},
+    {"name": "spring_coupon_quote",
+     "description": ("春秋优惠券折算单价（v1.13）：把已录入的券（209 元秋季 2 次卡、"
+                     "省钱卡专享价）匹配到该航线并折算实际单价，如 209÷2=104.5 元/次。"
+                     "券不叠加；税费口径不一致时不自动排名（避免跨口径比价误导）。"),
+     "inputSchema": {"type": "object", "required": ["from", "to"],
+                     "properties": {
+                         "from": {"type": "string", "description": "出发城市：三字码或中文名"},
+                         "to": {"type": "string", "description": "到达城市：三字码或中文名"},
+                         "date": {"type": "string", "description": "可选：出发日期 YYYY-MM-DD；省钱卡专享价按日期定价，强烈建议传"}}}},
     {"name": "favorites",
      "description": ("收藏航线管理：list 查看（含当前最低价与是否低于底价）、"
                      "set 收藏（底价可选）、remove 删除、check 立即检查。"),
@@ -189,8 +208,84 @@ def _fmt_favorites(params):
     return "\n".join(lines)
 
 
+def _cny(value):
+    """金额展示：整数不带小数尾巴，104.5 保留一位。"""
+    if value is None:
+        return "未披露"
+    number = float(value)
+    return str(int(number)) if number == int(number) else f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _fmt_spring_flights(params):
+    status, payload = webapp._api_spring_flights(params)
+    if status != 200:
+        return f"查询失败：{payload.get('error')}"
+    query = payload["query"]
+    lines = [
+        f"[春秋券库·不含价格] {query['dep_city']} → {query['arr_city']}"
+        f" ｜ {query['date'] or '未指定日期'}",
+        "承运人：春秋航空(9C) ｜ 本工具按设计不返回价格，单价请再用 spring_coupon_quote 折算",
+    ]
+    flights = payload.get("flights") or []
+    for i, item in enumerate(flights, 1):
+        date_text = item["date"] or "日期不限（券未绑定日期）"
+        lines.append(f"{i}. {item['product']}｜{item['route_text']}｜{date_text}"
+                     f"｜{item['sale_status_text']}"
+                     f"｜航班号/时刻：未披露（{item['flight_info_note']}）")
+    if not flights:
+        lines.append(f"（无可用商品）{payload.get('miss_hint') or ''}")
+    ids = payload.get("matched_coupon_ids") or []
+    if ids:
+        lines.append(f"命中券：{'、'.join(ids)}")
+    lines.append(f"· 说明：{payload.get('price_note')}")
+    return "\n".join(lines)
+
+
+def _fmt_spring_quote(params):
+    status, payload = webapp._api_spring_quote(params)
+    if status != 200:
+        return f"折算失败：{payload.get('error')}"
+    query = payload["query"]
+    lines = [f"[春秋券折算] {query['dep_city']} → {query['arr_city']}"
+             f" ｜ {query['date'] or '未指定日期'}",
+             payload.get("notice", "")]
+    quotes = payload.get("quotes") or []
+    for i, quote in enumerate(quotes, 1):
+        unit = quote.get("unit_price_cny")
+        price_text = f"¥{_cny(unit)}/人次/单程" if unit is not None else "单价：暂不可给（见下）"
+        lines.append(f"{i}. {quote['coupon_name']}：{price_text}"
+                     f"｜{quote['formula']}｜{quote['price_basis']}")
+        if quote.get("candidate_dates"):
+            dates = "、".join(f"{d['date']} ¥{_cny(d['price_cny'])}"
+                              for d in quote["candidate_dates"])
+            lines.append(f"   可售日期：{dates}")
+        if quote.get("validity"):
+            lines.append(f"   有效期：{quote['validity']}")
+        for warning in quote.get("warnings") or []:
+            lines.append(f"   ⚠ {warning}")
+    if not quotes:
+        lines.append(f"（无匹配券）{payload.get('miss_hint') or ''}")
+    best = payload.get("best_unit_price_cny")
+    groups = payload.get("basis_groups") or []
+    if groups:
+        lines.append("按税费口径分组（口径不同不合并排名）：")
+        for group in groups:
+            lines.append(f"· {group['basis']}：最低 ¥{_cny(group['lowest_unit_cny'])}"
+                         f"（{group['lowest_coupon_name']}，共 {group['count']} 个）")
+    if best is not None:
+        lines.append(f"→ 最低折算单价：¥{_cny(best)}"
+                     f"（{payload.get('best_reason') or ''}，券 {payload.get('best_coupon_id')}）")
+    elif quotes:
+        lines.append(f"→ 不自动排名：{payload.get('best_reason') or ''}")
+        if payload.get("cross_basis_note"):
+            lines.append(f"  {payload['cross_basis_note']}")
+    return "\n".join(lines)
+
+
 _HANDLERS = {"search_flights": _fmt_search, "list_deals": _fmt_deals,
-             "list_sources": _fmt_sources, "favorites": _fmt_favorites}
+             "list_sources": _fmt_sources, "favorites": _fmt_favorites,
+             "spring_flights": _fmt_spring_flights,
+             "spring_coupon_quote": _fmt_spring_quote}
 
 
 # ---------- JSON-RPC 分发 ----------
@@ -215,7 +310,9 @@ def handle_message(message):
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": SERVER_INFO,
             "instructions": ("低价票雷达：多渠道机票比价。先用 list_sources 了解渠道，"
-                             "再 search_flights 查询；数据含演示快照与真实接口，输出含声明。")})
+                             "再 search_flights 查询；春秋券库分两级——spring_flights 只查"
+                             "可兑性（不含价格），spring_coupon_quote 才给券折算单价。"
+                             "数据含演示快照与真实接口，输出含声明。")})
     if method == "notifications/initialized":
         return None
     if method == "ping":
