@@ -300,6 +300,63 @@ class CacheAndLimitTest(_TmpSourceCase):
         self.assertIn("500", text(500))
 
 
+class UpstreamLiveModeGateTest(_TmpSourceCase):
+    """第二道闸门（v1.16.1）：响应顶层 live_mode=false 时整批不采用。
+
+    前缀闸门只看 token 形状；若上游改前缀规则或账号被降级，这条响应级校验兜底。
+    依据：2026-10-26 三条航线实测响应顶层均带 live_mode 字段（test 模式为 false）。
+    """
+
+    def test_upstream_live_mode_false_blocks_all_rows(self):
+        payload = _payload()
+        payload["data"]["live_mode"] = False
+        source = self._source()
+        opener = _FakeOpener(payload=payload)
+        with mock.patch.object(source, "_opener", return_value=opener):
+            self.assertEqual(source.search("PVG", "LHR", _date()), [])
+        self.assertEqual(len(opener.requests), 1, "已发出请求才谈得上拦截响应")
+        note = source.empty_note("PVG", "LHR", _date())
+        self.assertIn("live_mode=false", note)
+
+    def test_upstream_live_mode_true_keeps_rows(self):
+        payload = _payload()
+        payload["data"]["live_mode"] = True
+        source = self._source()
+        with mock.patch.object(source, "_opener", return_value=_FakeOpener(payload=payload)):
+            self.assertTrue(source.search("PVG", "LHR", _date()))
+
+
+class SortingTest(_TmpSourceCase):
+    """上游返回顺序不可依赖：截前 12 条之前必须自己排序（v1.16.1）。
+
+    依据：实测 PVG→LHR 82 条虽近似按价升序，但官方未承诺顺序；
+    一旦乱序，直接取前 12 条会把真正便宜的行截掉。
+    """
+
+    def _payload_with_shuffled_prices(self):
+        payload = _payload()
+        base = _offer("off_0000A7XyZ0001")
+        offers = []
+        for i in range(15):
+            item = json.loads(json.dumps(base))
+            item["id"] = f"off_sort_{i:02d}"
+            item["total_amount"] = f"{5000 - i * 100}.00"   # i=14 → 3600，最便宜的在最后
+            item["total_currency"] = "CNY"
+            offers.append(item)
+        payload["data"]["offers"] = offers
+        return payload
+
+    def test_cheapest_offer_survives_truncation(self):
+        source = self._source()
+        opener = _FakeOpener(payload=self._payload_with_shuffled_prices())
+        with mock.patch.object(source, "_opener", return_value=opener):
+            rows = source.search("PVG", "LHR", _date())
+        prices = [r["price"] for r in rows if r["price"] is not None]
+        self.assertTrue(prices, "应产出可比较的行")
+        self.assertEqual(min(prices), 3600, "最便宜的报价不得被截断丢掉")
+        self.assertLessEqual(len(rows), 6, "展示条数仍受上限约束")
+
+
 class RegistryTest(unittest.TestCase):
     def test_source_is_registered(self):
         from sources import all_sources

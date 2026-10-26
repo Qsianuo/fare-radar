@@ -345,6 +345,48 @@
   并用实测响应替换 fixture。
 - 流程：ISSUE-025 / PR-026 / RELEASE-v1.16.0 同步落盘，`--no-ff` 合并 main，tag v1.16.0。
 
+## S25 迭代二十：v1.16.1 Duffel 实测校准（浏览器接管 + 三条航线打样）
+
+- 起因：用户回"duffel 已经注册登录完成，你来控制浏览器做吧"——要求 AI 接管浏览器完成
+  token 获取，而不是给操作指引。
+- **坑 1（浪费最多时间）：profile 复制不可行**。为了不打扰用户正在用的 Edge，先把
+  `Profile 1` 复制到 `F:\edge-cdp-profile` 再以调试端口启动，结果 Duffel cookie 读出来是
+  **0 条**，页面直接跳登录。根因是 Edge 的 App-Bound Encryption 把 cookie 主密钥绑在
+  **原始 user-data-dir 路径**上（`Local State` 里 `os_crypt` 段），换目录后密钥解不开、
+  cookie 被整批丢弃。教训写进记忆：**要复用登录态只能指向原始 profile 目录，不能复制。**
+- **坑 2：并发使用同一 session 会作废会话**。副本实例与原实例先后访问 `app.duffel.com` 后，
+  cookie 里出现 `ff-last-self-invalidated`，团队级路由全部 302 到 `/sign-in?next=…`
+  （首页仍能渲染团队列表，极具误导性）。只能重新登录——**密码由用户本人在窗口输入，
+  AI 不接触密码**，AI 负责填邮箱、点 Continue、轮询等登录完成。
+- 工具链：`agent-browser` 的 `connect 9222` 反复超时且会导致 Edge 退出，改为自建纯标准库
+  CDP 客户端（`F:\cdp\cdp.py`，socket + 帧编解码 + `Runtime.evaluate`），完全可控。
+  另：GUI 进程必须用**受管后台任务**启动，`Start-Process` 起的会被工具调用结束时的进程回收杀掉。
+- 路径事实：`Go live` → `/activation` → **Stripe Connect 商家入驻**
+  （`connect.stripe.com/setup/c/acct_…`，第 1 步选 Individual/Company，随后填法定名称/地址/
+  出生日期/银行账户/税号 + hCaptcha）。令牌表单**没有环境选项**，环境由全局 Test/Live 开关
+  决定；**live token 只能在 live 模式下创建**。用户本轮选择"先不 Go live"。
+- 令牌完整值只在创建瞬间显示，详情页恒为掩码；最终用**拦截创建接口响应**（`data.token`）
+  取到一次性 test token，用于打样三条航线：`PVG→LHR`（82 条）、`PVG→PEK`（13 条）、
+  `CAN→CTU`（44 条），HTTP 201，耗时 5 秒级。
+- **三条实测结论（都推翻了 v1.16.0 的假设）**：
+  1. test 模式**不止**虚构航司——`CAN→CTU` 混着 `3U/BA/BR/CA/CZ/HR/HX/IB/MU`，只有 `ZZ`
+     是纯虚构；但混入的真实航司价格同样是沙盒值、不可订，"有真航司"不能作为放行理由。
+  2. 三条航线 `total_currency` **全部 USD**（含两条国内线）→ **Duffel 提供不了人民币可比价**，
+     即便 KYC 通过，价值只在"航班时刻/航司/舱位 + 外币标价"。
+  3. 字段形态：`departing_at` **不带时区**（机场当地时间）、航班号是**整数**、
+     `aircraft` 可能为 **null**、`stops` 是空数组、`total_amount` 已含税
+     （实测 base 297.05 + tax 53.47 = total 350.52）。
+- 代码改动（patch 级）：① 新增**响应级闸门** `data.live_mode is False` → 整批不采用
+  （前缀闸门只看 token 形状，这条看上游自述，互为兜底）；② **排序后截取**——上游不承诺
+  按价返回，82 条近似升序纯属巧合，改为"人民币优先 → 同币种总价升序 → 无法解析排最后"
+  再取前 12 条；③ `_NOTE_TEST_TOKEN` 文案按实测重写 + 新增 `_NOTE_UPSTREAM_TEST`；
+  ④ fixture 按实测形态回填并重写 `_说明`。
+- 验证：`tests/test_duffel.py` 22 → **25 例**，全量 **289 例全绿**；跑测试前后
+  `juhe/day_counter.json` 均为 `{"calls": 20}`、未生成 `.duffel_cache/`（零真实请求）；
+  真实调用全部发生在仓库外的一次性脚本里，test token 用后已从 Duffel 删除。
+- 流程：ISSUE-026 / PR-027 / RELEASE-v1.16.1 同步落盘，`--no-ff` 合并 main，tag v1.16.1。
+- 遗留：live token 仍需用户本人过 Stripe KYC；外币折算是否开独立开关待产品决策。
+
 ## 版本记录（续）
 
 | 版本 | 内容 | 位置 |
@@ -368,6 +410,7 @@
 | v1.14.0 | 无报价不吞行程：上游「有航班、无价」保留展示（价格标未披露、不排序、不参与最低价），RapidAPI/飞常准同口径 | tag v1.14.0，PR-024，ISSUE-023 |
 | v1.15.0 | 接入聚合数据国内航班+缓存票价（补 RapidAPI 缺价，实测 33/33 全带价）+ 航司机翻修正（carriers.py）+ 离线注入失效修复（守卫测试） | tag v1.15.0，PR-025，ISSUE-024 |
 | v1.16.0 | Amadeus 自助门户 2026-07-17 下线归档（代码保留、文案改真）+ 接入 Duffel 作国际线第二真源（测试模式=虚构数据硬拒绝、外币不折算）+ 国际航司/机场中文名 | tag v1.16.0，PR-026，ISSUE-025 |
+| v1.16.1 | Duffel 实测校准：三条航线打样确认字段形态 + 响应级 `live_mode` 闸门 + 排序后截取（上游不保证按价返回）+ fixture 按实测回填；确认报价货币全为 USD | tag v1.16.1，PR-027，ISSUE-026 |
 
 ## 过程改进记录（复盘用）
 

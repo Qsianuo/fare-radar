@@ -1,4 +1,4 @@
-# 10 · Duffel 接入说明（v1.16.0）
+# 10 · Duffel 接入说明（v1.16.1）
 
 > 关联：ISSUE-025｜PR-026｜RELEASE-v1.16.0
 > 适配器：`src/sources/duffel.py`｜配置：`src/sources/duffel_config.json`（gitignore，不入库）
@@ -40,13 +40,34 @@ Body:    {"data": {"slices": [{"origin": "PVG", "destination": "LHR",
   `included_desc` 说明），引擎不再补费。
 - **`Duffel-Version` 只有 `v2`（v1 已于 2025-01-23 停用）**，写死在常量 `API_VERSION`。
 
+### 2.1 实测校准（2026-10-26，test token 打三条航线）
+
+用测试令牌实际调用了 `PVG→LHR`、`PVG→PEK`、`CAN→CTU`（2026-11-15），确认以下形态，
+与「照文档构造」的假设有出入的地方已回写到 fixture 与解析逻辑：
+
+| 项 | 实测结果 | 影响 |
+|---|---|---|
+| 响应码 | `201 Created`（不是 200） | 现有代码只判成功不判具体码，无需改 |
+| `departing_at` | `2026-11-15T10:50:00`，**无时区后缀**，为机场当地时间 | `_hhmm` 直接取 `[11:16]`；不能假设带 `+08:00` |
+| `marketing_carrier_flight_number` | **整数** `1274` | `str()` 转换后拼 `AA1274`，已验证 |
+| `aircraft` | 可能为 **`null`** | 适配器未依赖该字段，安全 |
+| `stops` | 空数组 `[]`，**不是中转次数** | 中转段数仍按 `len(segments)-1` 计 |
+| 税费 | `base 297.05 + tax 53.47 = total 350.52`（USD） | 证实 `total_amount` 含税，`tax_included=True` 口径正确 |
+| 币种 | 三条航线**全部 `USD`**（含国内线 PVG→PEK / CAN→CTU） | 见下方 3.2 的结论 |
+| `live_mode` | 顶层与每个 offer 都有布尔字段，test 模式为 `false` | 新增响应级闸门 3.3 |
+| 结果规模 | PVG→LHR 82 条、CAN→CTU 44 条、PVG→PEK 13 条 | 必须排序后再截取（3.4） |
+
 ## 3. 两条硬规则（本适配器的存在理由）
 
 ### 3.1 测试模式 = 虚构数据，直接拒绝
 
-Duffel 测试模式（token 前缀 `duffel_test_`）返回的是沙盒航司 **Duffel Airways（IATA `ZZ`）**，
-官方文档明写 "you won't see realistic flight schedules or prices"。这与项目「零编造」红线
-正面冲突，因此：
+Duffel 测试模式（token 前缀 `duffel_test_`）官方文档明写 "you won't see realistic flight
+schedules or prices"。**实测（2026-10-26）发现结果集并非只有沙盒航司**：`PVG→PEK` 13 条里混着
+`CA`/`MU`，`CAN→CTU` 44 条里混着 `3U`/`BA`/`BR`/`CA`/`CZ`/`HR`/`HX`/`IB`/`MU`，只有 `ZZ`
+（Duffel Airways）是纯虚构航司。
+
+**"出现真实航司"不能当作放行理由**——这些行的价格同样是沙盒值、不可订。与项目「零编造」
+红线正面冲突，因此：
 
 - `mode == "test"` → `status = not_available`，`status_reason` 明确说清"虚构数据、不接入"；
 - `search()` 在 `availability()` 处即返回空，**不触达网络层**（单测 `test_test_mode_token_never_sends_request`
@@ -67,6 +88,32 @@ Duffel 请求侧**没有**币种参数（`currency` 不是合法字段），货�
 折算汇率是**会变的第三方数据**，写死等于替用户编价；沿用 v1.14「行保留、价格留空、说明原因」
 的既有语义最稳。
 
+**实测补充（对价值判断很关键）**：三条航线（含两条国内线）返回的 `total_currency` **全部是
+`USD`**，没有一条人民币报价。含义是——**即使拿到 live token，Duffel 也基本提供不了可直接
+比价的人民币票价**，它对中国航线的价值落在「航班时刻/航司/舱位参考 + 外币标价」层面。
+若要让它的价格进入最低价与"低于底价"判定，必须先做汇率折算，那是另一个产品决策
+（需要显式开关 + 全链路标注 + 不参与排名的隔离），不属于本适配器的默认行为。
+
+### 3.3 响应级闸门：`live_mode=false` 一律不采用（v1.16.1）
+
+token 前缀闸门只能挡住 `duffel_test_` 开头的凭据。若上游改前缀规则、或账号在 live 模式下
+被降级，光看 token 形状会漏。实测确认响应**顶层带 `live_mode` 布尔字段**，因此加第二道校验：
+
+```python
+if isinstance(data, dict) and data.get("live_mode") is False:
+    # 缓存一条"上游自称测试环境"的空结果，empty_note 据此给出可执行原因
+    return []
+```
+
+这样做的好处是不依赖任何本地约定，完全以上游自述为准。
+
+### 3.4 先排序再截取（v1.16.1）
+
+实测 `PVG→LHR` 一次返回 **82 条** offer，而适配器只取前 12 条再截到 6 条展示。上游**未承诺**
+返回顺序按价格升序（本次实测近似升序纯属巧合）。若不排序，一旦乱序就会把真正便宜的报价
+截掉，等于给出错误的最低价。现在按「人民币优先 → 同币种总价升序 → 无法解析的排最后」排序
+后再截取，单测 `test_cheapest_offer_survives_truncation` 用 15 条乱序数据锁住该行为。
+
 ## 4. 调用纪律
 
 | 项 | 值 | 理由 |
@@ -79,21 +126,29 @@ Duffel 请求侧**没有**币种参数（`currency` 不是合法字段），货�
 
 ## 5. 测试
 
-`tests/test_duffel.py` **22 例**，全程离线：
+`tests/test_duffel.py` **25 例**，全程离线：
 
-- `tests/fixtures/duffel_offer_request_sample.json` 是**按官方文档结构构造的形态样本，不是真实
-  响应**（本迭代尚无 live token）——联调后必须按实测回填，文件头已写明这一点；
+- `tests/fixtures/duffel_offer_request_sample.json` 的**字段形态取自 2026-10-26 实测响应**
+  （三条航线），航线/航班号/价格为人工示意值，不是任何真实报价；文件头 `_说明` 记录了实测
+  确认的 6 条形态要点，改 fixture 前先读它；
 - 覆盖：闸门四态（无 token / test / 未知形态 / live）、离线开关、请求形态（方法/头/体/查询串）、
   直飞与 1/2 段中转映射、跨天、外币不折算、缺航段丢弃、承运人回退、时长解析、机场名回退、
-  缓存命中、日限硬停、空结果说明、HTTP 错误文案、注册表。
+  缓存命中、日限硬停、空结果说明、HTTP 错误文案、注册表，
+  以及 v1.16.1 新增的 **响应级 `live_mode` 闸门**与**排序后截取**；
 - 离线注入按 `docs/03` 第 9 条同步 **6 处**（5 个测试模块 + 守卫 `NETWORK_MODULES`），
-  跑全量前后 `src/sources/.juhe_cache/day_counter.json` 保持 `20`，且未生成 `.duffel_cache/`。
+  跑全量前后 `src/sources/.juhe_cache/day_counter.json` 保持 `20`，且未生成 `.duffel_cache/`
+  （v1.16.1 实测：全量 289 例，计数器 20→20）。
 
 ## 6. 待办（交回产品侧）
 
-1. 注册 Duffel（https://duffel.com）→ 邮箱验证 + KYC 激活 → 创建 **live** token
-   （`duffel_live_`）→ 写入 `src/sources/duffel_config.json`；
-2. 拿到 token 后做一次真实联调：`PVG→LHR`、`CAN→SIN`、`PEK→NRT` 三条国际线 + 一条国内线
-   （预期国内线多为空报价），核对字段映射与币种分布，再用实测响替换 fixture；
-3. 联调若发现国际线 CNY 报价占比过低（大量外币行落到"未披露"），再评估是否调整展示策略
-   （不引入汇率折算的前提下）。
+1. **Go live 的真实路径**（2026-10-26 实测）：Dashboard → `Go live` → `/activation` 实际跳到
+   **Stripe Connect 商家入驻**（`connect.stripe.com/setup/c/acct_…`）。第 1 步选商家类型
+   （无公司注册文件选 `Individual`），随后要填法定名称、地址、出生日期、银行账户、税号，
+   并过 hCaptcha。**这必须由账号持有人本人填**（涉及真实身份与金融信息），提交后 Stripe
+   自动审核，通过后才能在 live 模式下创建 `duffel_live_` token。
+2. 前置：邮箱必须已验证（未验证时点 `Go live` 会先跳 `/email` 等确认链接，24 小时有效，
+   可重发）。
+3. 拿到 live token 后联调 `PVG→LHR`、`CAN→SIN`、`PEK→NRT` 与一条国内线，**预期货币为 USD**
+   （见 3.2），不要指望人民币行；核对字段映射与币种分布后同步更新 fixture。
+4. 若要让 Duffel 价格参与比价与"低于底价"判定，需先做汇率折算的独立决策
+   （显式开关 + 全链路标注 + 不参与排名），默认不做。
